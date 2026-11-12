@@ -226,6 +226,7 @@ internal sealed class MainForm : Form
             _input.AppendText(text);
         });
         _voice.Status += text => BeginInvoke(() => _status.Text = text);
+        _voice.StateChanged += () => BeginInvoke(RefreshMic);
         FormClosed += (_, _) =>
         {
             _voice.Dispose();
@@ -447,13 +448,18 @@ internal sealed class MainForm : Form
         try
         {
             _voice.Toggle();
-            _mic.BackColor = _voice.IsListening ? Theme.Rose : Theme.InkDeep;
-            _mic.Text = _voice.IsListening ? "Stop" : "Mów";
+            RefreshMic();
         }
         catch (Exception ex)
         {
             _status.Text = ex.Message;
         }
+    }
+
+    private void RefreshMic()
+    {
+        _mic.BackColor = _voice.IsListening ? Theme.Rose : Theme.InkDeep;
+        _mic.Text = _voice.IsListening ? "Stop" : "Mów";
     }
 
     private void InputKeyDown(object? sender, KeyEventArgs e)
