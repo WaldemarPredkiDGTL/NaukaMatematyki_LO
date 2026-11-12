@@ -10,10 +10,9 @@ internal sealed class VoiceInput : IDisposable
     private readonly object _gate = new();
     private WasapiRecorder? _capture;
     private WaveFileWriter? _writer;
-    private FileStream? _recordStream;
+    private MemoryStream? _recording;
     private WhisperFactory? _factory;
     private CancellationTokenSource? _prepare;
-    private string? _rawPath;
     private bool _listening;
     private bool _transcribing;
     private bool _disposed;
@@ -54,22 +53,20 @@ internal sealed class VoiceInput : IDisposable
             await EnsureModelAsync(token);
             if (!_listening || token.IsCancellationRequested) return;
 
-            var raw = Path.Combine(Path.GetTempPath(), "pracownia-mic-" + Guid.NewGuid().ToString("N") + ".wav");
             var capture = new WasapiRecorderBuilder().WithSharedMode().Build();
-            var file = File.Create(raw);
+            var recording = new MemoryStream();
             lock (_gate)
             {
                 if (!_listening || _disposed)
                 {
-                    file.Dispose();
+                    recording.Dispose();
                     capture.Dispose();
                     return;
                 }
 
-                _recordStream = file;
-                _writer = new WaveFileWriter(file, capture.WaveFormat);
+                _recording = recording;
+                _writer = new WaveFileWriter(new LeaveOpenStream(recording), capture.WaveFormat);
                 _capture = capture;
-                _rawPath = raw;
             }
 
             capture.DataAvailable += (buffer, _, _, _) =>
@@ -95,12 +92,9 @@ internal sealed class VoiceInput : IDisposable
     private async Task StopAndTranscribeAsync()
     {
         _prepare?.Cancel();
-        string? raw;
         WasapiRecorder? capture;
         lock (_gate)
         {
-            raw = _rawPath;
-            _rawPath = null;
             capture = _capture;
             _capture = null;
         }
@@ -108,25 +102,25 @@ internal sealed class VoiceInput : IDisposable
         try { capture?.StopRecording(); }
         catch (Exception) { }
 
+        byte[]? recorded;
         lock (_gate)
         {
-            CloseRecording();
+            recorded = TakeRecording();
             capture?.Dispose();
         }
 
-        if (string.IsNullOrWhiteSpace(raw) || !File.Exists(raw))
+        if (recorded is null || recorded.Length < 8000)
         {
-            Status?.Invoke("Mikrofon wyłączony.");
+            Status?.Invoke(recorded is null ? "Mikrofon wyłączony." : "Za krótko. Powiedz pytanie i kliknij Stop.");
             return;
         }
 
         _transcribing = true;
-        var wav = Path.Combine(Path.GetTempPath(), "pracownia-mic-16k-" + Guid.NewGuid().ToString("N") + ".wav");
         try
         {
             Status?.Invoke("Spisuję wypowiedź…");
-            Resample(raw, wav);
-            if (new FileInfo(wav).Length < 8000)
+            var wav = Resample(recorded);
+            if (wav.Length < 8000)
             {
                 Status?.Invoke("Za krótko. Powiedz pytanie i kliknij Stop.");
                 return;
@@ -135,7 +129,7 @@ internal sealed class VoiceInput : IDisposable
             var model = ModelPath();
             _factory ??= WhisperFactory.FromPath(model);
             using var processor = _factory.CreateBuilder().WithLanguage("pl").Build();
-            await using var stream = File.OpenRead(wav);
+            await using var stream = new MemoryStream(wav);
             var text = new StringBuilder();
             await foreach (var segment in processor.ProcessAsync(stream))
             {
@@ -159,8 +153,6 @@ internal sealed class VoiceInput : IDisposable
         finally
         {
             _transcribing = false;
-            TryDelete(raw);
-            TryDelete(wav);
         }
     }
 
@@ -184,26 +176,31 @@ internal sealed class VoiceInput : IDisposable
         "NaukaMatematyki_LO",
         "ggml-base.bin");
 
-    private void CloseRecording()
+    private byte[]? TakeRecording()
     {
         try { _writer?.Dispose(); }
         catch (Exception) { }
-        try { _recordStream?.Dispose(); }
-        catch (Exception) { }
         _writer = null;
-        _recordStream = null;
+        var recording = _recording;
+        _recording = null;
+        if (recording is null) return null;
+        try
+        {
+            return recording.ToArray();
+        }
+        finally
+        {
+            recording.Dispose();
+        }
     }
 
-    private static void Resample(string source, string target)
+    private static byte[] Resample(byte[] source)
     {
-        using var input = new MemoryStream(ReadReleased(source));
+        using var input = new MemoryStream(source, writable: false);
         using var reader = new WaveFileReader(input);
         var format = new WaveFormat(16000, 16, 1);
         if (reader.WaveFormat.SampleRate == format.SampleRate && reader.WaveFormat.Channels == 1 && reader.WaveFormat.BitsPerSample == 16)
-        {
-            File.WriteAllBytes(target, input.ToArray());
-            return;
-        }
+            return source;
 
         using var output = new MemoryStream();
         using var resampler = new MediaFoundationResampler(reader, format) { ResamplerQuality = 60 };
@@ -214,27 +211,7 @@ internal sealed class VoiceInput : IDisposable
             while ((read = resampler.Read(buffer.AsSpan())) > 0)
                 writer.Write(buffer, 0, read);
         }
-        File.WriteAllBytes(target, output.ToArray());
-    }
-
-    private static byte[] ReadReleased(string path)
-    {
-        for (var attempt = 0; attempt < 8; attempt++)
-        {
-            try
-            {
-                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var memory = new MemoryStream();
-                stream.CopyTo(memory);
-                return memory.ToArray();
-            }
-            catch (IOException) when (attempt < 7)
-            {
-                Thread.Sleep(40);
-            }
-        }
-
-        throw new IOException("Nie mogę odczytać nagrania, plik WAV jest jeszcze zajęty. Spróbuj powiedzieć pytanie jeszcze raz.");
+        return output.ToArray();
     }
 
     private sealed class LeaveOpenStream(Stream inner) : Stream
@@ -259,13 +236,6 @@ internal sealed class VoiceInput : IDisposable
         StateChanged?.Invoke();
     }
 
-    private static void TryDelete(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return;
-        try { if (File.Exists(path)) File.Delete(path); }
-        catch (Exception) { }
-    }
-
     public void Dispose()
     {
         _disposed = true;
@@ -275,7 +245,7 @@ internal sealed class VoiceInput : IDisposable
         {
             try { _capture?.StopRecording(); }
             catch (Exception) { }
-            CloseRecording();
+            TakeRecording();
             _capture?.Dispose();
             _capture = null;
         }
