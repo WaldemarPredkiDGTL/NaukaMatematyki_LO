@@ -10,6 +10,7 @@ internal sealed class VoiceInput : IDisposable
     private readonly object _gate = new();
     private WasapiRecorder? _capture;
     private WaveFileWriter? _writer;
+    private FileStream? _recordStream;
     private WhisperFactory? _factory;
     private CancellationTokenSource? _prepare;
     private string? _rawPath;
@@ -65,6 +66,7 @@ internal sealed class VoiceInput : IDisposable
                     return;
                 }
 
+                _recordStream = file;
                 _writer = new WaveFileWriter(file, capture.WaveFormat);
                 _capture = capture;
                 _rawPath = raw;
@@ -94,16 +96,22 @@ internal sealed class VoiceInput : IDisposable
     {
         _prepare?.Cancel();
         string? raw;
+        WasapiRecorder? capture;
         lock (_gate)
         {
             raw = _rawPath;
             _rawPath = null;
-            try { _capture?.StopRecording(); }
-            catch (Exception) { }
-            _writer?.Dispose();
-            _writer = null;
-            _capture?.Dispose();
+            capture = _capture;
             _capture = null;
+        }
+
+        try { capture?.StopRecording(); }
+        catch (Exception) { }
+
+        lock (_gate)
+        {
+            CloseRecording();
+            capture?.Dispose();
         }
 
         if (string.IsNullOrWhiteSpace(raw) || !File.Exists(raw))
@@ -176,18 +184,72 @@ internal sealed class VoiceInput : IDisposable
         "NaukaMatematyki_LO",
         "ggml-base.bin");
 
+    private void CloseRecording()
+    {
+        try { _writer?.Dispose(); }
+        catch (Exception) { }
+        try { _recordStream?.Dispose(); }
+        catch (Exception) { }
+        _writer = null;
+        _recordStream = null;
+    }
+
     private static void Resample(string source, string target)
     {
-        using var reader = new WaveFileReader(source);
-        if (reader.WaveFormat.SampleRate == 16000 && reader.WaveFormat.Channels == 1 && reader.WaveFormat.BitsPerSample == 16)
+        using var input = new MemoryStream(ReadReleased(source));
+        using var reader = new WaveFileReader(input);
+        var format = new WaveFormat(16000, 16, 1);
+        if (reader.WaveFormat.SampleRate == format.SampleRate && reader.WaveFormat.Channels == 1 && reader.WaveFormat.BitsPerSample == 16)
         {
-            reader.Dispose();
-            File.Copy(source, target, overwrite: true);
+            File.WriteAllBytes(target, input.ToArray());
             return;
         }
 
-        using var resampler = new MediaFoundationResampler(reader, new WaveFormat(16000, 16, 1)) { ResamplerQuality = 60 };
-        WaveFileWriter.CreateWaveFile(target, resampler);
+        using var output = new MemoryStream();
+        using var resampler = new MediaFoundationResampler(reader, format) { ResamplerQuality = 60 };
+        using (var writer = new WaveFileWriter(new LeaveOpenStream(output), format))
+        {
+            var buffer = new byte[format.AverageBytesPerSecond];
+            int read;
+            while ((read = resampler.Read(buffer.AsSpan())) > 0)
+                writer.Write(buffer, 0, read);
+        }
+        File.WriteAllBytes(target, output.ToArray());
+    }
+
+    private static byte[] ReadReleased(string path)
+    {
+        for (var attempt = 0; attempt < 8; attempt++)
+        {
+            try
+            {
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var memory = new MemoryStream();
+                stream.CopyTo(memory);
+                return memory.ToArray();
+            }
+            catch (IOException) when (attempt < 7)
+            {
+                Thread.Sleep(40);
+            }
+        }
+
+        throw new IOException("Nie mogę odczytać nagrania, plik WAV jest jeszcze zajęty. Spróbuj powiedzieć pytanie jeszcze raz.");
+    }
+
+    private sealed class LeaveOpenStream(Stream inner) : Stream
+    {
+        public override bool CanRead => inner.CanRead;
+        public override bool CanSeek => inner.CanSeek;
+        public override bool CanWrite => inner.CanWrite;
+        public override long Length => inner.Length;
+        public override long Position { get => inner.Position; set => inner.Position = value; }
+        public override void Flush() => inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
+        public override long Seek(long offset, SeekOrigin origin) => inner.Seek(offset, origin);
+        public override void SetLength(long value) => inner.SetLength(value);
+        public override void Write(byte[] buffer, int offset, int count) => inner.Write(buffer, offset, count);
+        protected override void Dispose(bool disposing) { }
     }
 
     private void StopListening()
@@ -213,9 +275,8 @@ internal sealed class VoiceInput : IDisposable
         {
             try { _capture?.StopRecording(); }
             catch (Exception) { }
-            _writer?.Dispose();
+            CloseRecording();
             _capture?.Dispose();
-            _writer = null;
             _capture = null;
         }
         _factory?.Dispose();
