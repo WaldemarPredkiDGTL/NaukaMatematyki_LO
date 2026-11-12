@@ -7,7 +7,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Product>Pracownia LO</Product>
-    <AssemblyTitle>Pracownia — matematyka i fizyka</AssemblyTitle>
+    <AssemblyTitle>Pracownia — matematyka, fizyka i chemia</AssemblyTitle>
   </PropertyGroup>
 
   <ItemGroup>

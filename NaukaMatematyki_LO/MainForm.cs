@@ -19,6 +19,7 @@ internal sealed class MainForm : Form
     private readonly Button _mic = new();
     private readonly Button _math = new();
     private readonly Button _physics = new();
+    private readonly Button _chemistry = new();
     private readonly List<AttachedImage> _images = [];
     private readonly List<StudyTurn> _historyItems = [];
     private readonly List<StudyTurn> _session = [];
@@ -29,7 +30,7 @@ internal sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "Pracownia — matematyka i fizyka";
+        Text = "Pracownia — matematyka, fizyka i chemia";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1100, 720);
         Size = new Size(1360, 860);
@@ -98,47 +99,52 @@ internal sealed class MainForm : Form
             _key.Left = _model.Left - _key.Width - 12;
         };
 
-        var sidebar = new Panel { Dock = DockStyle.Left, Width = 292, BackColor = Theme.Sidebar, Padding = new Padding(14) };
+        var sidebar = new Panel { Dock = DockStyle.Left, Width = 336, BackColor = Theme.Sidebar, Padding = new Padding(14) };
         _math.Text = "Matematyka";
         _physics.Text = "Fizyka";
+        _chemistry.Text = "Chemia";
         StyleChoice(_math);
         StyleChoice(_physics);
+        StyleChoice(_chemistry);
         _math.Location = new Point(14, 14);
-        _physics.Location = new Point(150, 14);
-        _math.Width = 128;
-        _physics.Width = 128;
+        _physics.Location = new Point(122, 14);
+        _chemistry.Location = new Point(230, 14);
+        _math.Width = 100;
+        _physics.Width = 100;
+        _chemistry.Width = 92;
         var levelLabel = new Label { Text = "POZIOM", ForeColor = Theme.Muted, Font = Theme.TinyBold, Location = new Point(16, 60), AutoSize = true };
         _level.DropDownStyle = ComboBoxStyle.DropDownList;
         _level.FlatStyle = FlatStyle.Flat;
         _level.Items.AddRange(["Podstawowy", "Rozszerzony", "Dopasuj do pytania"]);
         _level.Location = new Point(16, 80);
-        _level.Width = 260;
+        _level.Width = 304;
         StyleField(_level);
         var topicLabel = new Label { Text = "TEMATY", ForeColor = Theme.Muted, Font = Theme.TinyBold, Location = new Point(16, 116), AutoSize = true };
         _topics.Location = new Point(14, 138);
-        _topics.Size = new Size(264, 250);
+        _topics.Size = new Size(308, 250);
         _topics.FlowDirection = FlowDirection.TopDown;
         _topics.WrapContents = false;
         _topics.AutoScroll = true;
         _topics.BackColor = Theme.Sidebar;
         var historyLabel = new Label { Text = "OSTATNIE LEKCJE", ForeColor = Theme.Muted, Font = Theme.TinyBold, Location = new Point(16, 398), AutoSize = true };
         _history.Location = new Point(14, 420);
-        _history.Size = new Size(264, 220);
+        _history.Size = new Size(308, 220);
         _history.BorderStyle = BorderStyle.None;
         _history.BackColor = Theme.InkDeep;
         _history.ForeColor = Theme.Chalk;
         _history.Font = Theme.Small;
         _history.IntegralHeight = false;
-        sidebar.Controls.AddRange([_math, _physics, levelLabel, _level, topicLabel, _topics, historyLabel, _history]);
+        sidebar.Controls.AddRange([_math, _physics, _chemistry, levelLabel, _level, topicLabel, _topics, historyLabel, _history]);
         sidebar.Resize += (_, _) =>
         {
             _history.Height = Math.Max(80, sidebar.Height - _history.Top - 16);
             _topics.Width = sidebar.Width - 28;
             _history.Width = sidebar.Width - 28;
             _level.Width = sidebar.Width - 32;
+            LayoutSubjects(sidebar.Width);
         };
 
-        var composer = new Panel { Dock = DockStyle.Bottom, Height = 168, BackColor = Theme.Sidebar, Padding = new Padding(16, 8, 16, 12) };
+        var composer = new Panel { Dock = DockStyle.Bottom, Height = 200, BackColor = Theme.Sidebar, Padding = new Padding(16, 8, 16, 12) };
         _thumbs.Dock = DockStyle.Top;
         _thumbs.Height = 0;
         _thumbs.BackColor = Theme.Sidebar;
@@ -151,9 +157,9 @@ internal sealed class MainForm : Form
         var buttons = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 46,
+            Height = 78,
             FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
+            WrapContents = true,
             BackColor = Theme.Sidebar,
             Padding = new Padding(0, 8, 0, 0)
         };
@@ -161,6 +167,7 @@ internal sealed class MainForm : Form
         var paste = MakeButton("Wklej obraz");
         var file = MakeButton("Z pliku");
         var clear = MakeButton("Wyczyść");
+        var reset = MakeButton("Wyzeruj");
         var sample = MakeButton("Przykład");
         var fresh = MakeButton("Nowa lekcja");
         var save = MakeButton("Zapisz tablicę");
@@ -172,7 +179,7 @@ internal sealed class MainForm : Form
         _send.Height = 34;
         StyleChoice(_mic);
         _mic.Width = 84;
-        buttons.Controls.AddRange([_mic, paste, file, clear, sample, fresh, save, _send]);
+        buttons.Controls.AddRange([_mic, paste, file, clear, reset, sample, fresh, save, _send]);
         _status.Dock = DockStyle.Bottom;
         _status.Height = 22;
         _status.ForeColor = Theme.Muted;
@@ -192,6 +199,7 @@ internal sealed class MainForm : Form
         paste.Click += (_, _) => PasteImage();
         file.Click += (_, _) => PickImage();
         clear.Click += (_, _) => { _input.Clear(); ClearImages(); };
+        reset.Click += (_, _) => ResetBoard();
         sample.Click += (_, _) => ShowSample();
         fresh.Click += (_, _) => StartFresh();
         save.Click += (_, _) => SaveBoard();
@@ -199,6 +207,7 @@ internal sealed class MainForm : Form
         _mic.Click += (_, _) => ToggleMic();
         _math.Click += (_, _) => SetSubject("Matematyka");
         _physics.Click += (_, _) => SetSubject("Fizyka");
+        _chemistry.Click += (_, _) => SetSubject("Chemia");
         _history.SelectedIndexChanged += (_, _) => OpenSelectedHistory();
         _input.KeyDown += InputKeyDown;
         DragEnter += (_, e) => { if (e.Data?.GetDataPresent(DataFormats.FileDrop) == true) e.Effect = DragDropEffects.Copy; };
@@ -241,23 +250,37 @@ internal sealed class MainForm : Form
             : "Klucz odczytany lokalnie. Możesz pytać.";
     }
 
+    private void LayoutSubjects(int sidebarWidth)
+    {
+        var gap = 8;
+        var width = Math.Max(72, (sidebarWidth - 28 - gap * 2) / 3);
+        _math.SetBounds(14, 14, width, 34);
+        _physics.SetBounds(14 + width + gap, 14, width, 34);
+        _chemistry.SetBounds(14 + (width + gap) * 2, 14, width, 34);
+    }
+
     private void SetSubject(string subject)
     {
         _settings.Subject = subject;
-        _math.BackColor = subject == "Matematyka" ? Theme.Copper : Theme.InkDeep;
-        _math.ForeColor = subject == "Matematyka" ? Color.White : Theme.Chalk;
-        _physics.BackColor = subject == "Fizyka" ? Theme.Sky : Theme.InkDeep;
-        _physics.ForeColor = Color.White;
+        PaintSubject(_math, subject == "Matematyka", Theme.Copper);
+        PaintSubject(_physics, subject == "Fizyka", Theme.Sky);
+        PaintSubject(_chemistry, subject == "Chemia", Theme.Sage);
         RebuildTopics();
+    }
+
+    private static void PaintSubject(Button button, bool selected, Color accent)
+    {
+        button.BackColor = selected ? accent : Theme.InkDeep;
+        button.ForeColor = selected ? Color.White : Theme.Chalk;
     }
 
     private void RebuildTopics()
     {
         _topics.Controls.Clear();
-        foreach (var (label, prompt) in _settings.Subject == "Fizyka" ? PhysicsTopics : MathTopics)
+        foreach (var (label, prompt) in TopicsFor(_settings.Subject))
         {
             var button = MakeButton(label);
-            button.Width = 248;
+            button.Width = Math.Max(220, _topics.Width - 8);
             button.Height = 32;
             button.Margin = new Padding(0, 0, 0, 6);
             button.TextAlign = ContentAlignment.MiddleLeft;
@@ -319,6 +342,22 @@ internal sealed class MainForm : Form
         ClearImages();
         ShowBoard(scrollEnd: false);
         _status.Text = "Nowa lekcja. Poprzednie zostają na liście z lewej.";
+    }
+
+    private void ResetBoard()
+    {
+        if (_busy)
+        {
+            _status.Text = "Poczekaj, aż Grok skończy, albo naciśnij Stop.";
+            return;
+        }
+
+        _history.ClearSelected();
+        _session.Clear();
+        _input.Clear();
+        ClearImages();
+        _board.Show([], includeWelcome: false);
+        _status.Text = "Tablica wyczyszczona. Poprzednie lekcje zostają na liście z lewej.";
     }
 
     private async Task SendAsync()
@@ -521,18 +560,34 @@ internal sealed class MainForm : Form
         _thumbs.Height = 0;
     }
 
+    private string ExportFileName()
+    {
+        var subject = string.IsNullOrWhiteSpace(_settings.Subject) ? "Lekcja" : _settings.Subject.Trim();
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            subject = subject.Replace(invalid, '_');
+        return $"{subject}[{DateTime.Now:yyyy-MM-dd HH-mm-ss}].pdf";
+    }
+
     private void SaveBoard()
     {
         using var dialog = new SaveFileDialog
         {
-            Filter = "PNG|*.png",
-            FileName = "lekcja.png"
+            Filter = "PDF|*.pdf|PNG|*.png",
+            FileName = ExportFileName()
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         try
         {
-            _board.ExportPng(dialog.FileName);
-            _status.Text = "Tablica zapisana.";
+            if (dialog.FileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            {
+                _board.ExportPng(dialog.FileName);
+                _status.Text = "Tablica zapisana jako PNG.";
+            }
+            else
+            {
+                _board.ExportPdf(dialog.FileName);
+                _status.Text = "Tablica zapisana jako PDF.";
+            }
         }
         catch (Exception ex)
         {
@@ -578,6 +633,13 @@ internal sealed class MainForm : Form
         return button;
     }
 
+    private static (string Label, string Prompt)[] TopicsFor(string subject) => subject switch
+    {
+        "Fizyka" => PhysicsTopics,
+        "Chemia" => ChemistryTopics,
+        _ => MathTopics
+    };
+
     private static readonly (string Label, string Prompt)[] MathTopics =
     [
         ("Funkcja kwadratowa", "Wyjaśnij funkcję kwadratową na przykładzie f(x)=x^2-4x+3. Pokaż wykres, miejsca zerowe i wierzchołek."),
@@ -598,6 +660,18 @@ internal sealed class MainForm : Form
         ("Obwód", "Szeregowo R1=4 ohm i R2=6 ohm, U=12 V. Policz prąd i spadki napięć."),
         ("Drgania", "x(t)=0.1*sin(2*pi*t). Wykres, amplituda i okres. We wzorze wykresu użyj x jako czasu."),
         ("Soczewka", "Soczewka skupiająca: f=10 cm, przedmiot w odległości 30 cm. Policz obraz i powiększenie.")
+    ];
+
+    private static readonly (string Label, string Prompt)[] ChemistryTopics =
+    [
+        ("Mol", "Wytłumacz mol i masę molową na przykładzie 18 g wody. Policz liczbę moli i cząsteczek."),
+        ("Stechiometria", "Ile gramów CO2 powstanie ze spalenia 16 g metanu? Ułóż równanie i policz z moli."),
+        ("Stężenie", "W 200 cm3 roztworu jest 0,1 mola NaCl. Policz stężenie molowe i procentowe, jeśli gęstość to 1,02 g/cm3."),
+        ("pH", "Oblicz pH roztworu, w którym [H+] = 0,001 mol/dm3. Narysuj zależność pH od x, gdzie x to wykładnik: pH = -log(10^(-x)) dla x od 1 do 6."),
+        ("Równanie reakcji", "Zbilansuj spalanie etanolu i wytłumacz, co znaczą współczynniki stechiometryczne."),
+        ("Wiązania", "Porównaj wiązanie jonowe, kowalencyjne i metaliczne na przykładach NaCl, H2O i miedzi."),
+        ("Szybkość reakcji", "Stężenie substratu maleje jak c(t)=2*exp(-0.3*x). We wzorze wykresu użyj x jako czasu. Odczytaj stężenie po 4 jednostkach czasu."),
+        ("Termochemia", "Reakcja ma ΔH = -286 kJ/mol. Wytłumacz, czy jest egzo- czy endotermiczna i co to znaczy dla ciepła.")
     ];
 
     private sealed record AttachedImage(Bitmap Full, Bitmap Thumb, byte[] Png);

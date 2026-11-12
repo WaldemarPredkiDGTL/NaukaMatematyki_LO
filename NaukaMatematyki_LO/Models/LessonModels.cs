@@ -68,7 +68,9 @@ internal sealed class LessonDocument
         {
             var bit = block.Type switch
             {
-                "formula" => block.Display ?? block.Latex,
+                "formula" => string.IsNullOrWhiteSpace(block.Units)
+                    ? block.Display ?? block.Latex
+                    : $"{block.Display ?? block.Latex} [{block.Units}]",
                 "steps" => block.Items is null ? null : string.Join(" ", block.Items),
                 "graph" => block.Graph?.Title ?? block.Caption,
                 _ => block.Content
@@ -121,6 +123,7 @@ internal sealed class LessonBlock
     public string? Content { get; set; }
     public string? Latex { get; set; }
     public string? Display { get; set; }
+    public string? Units { get; set; }
     public string? Caption { get; set; }
     public List<string>? Items { get; set; }
     public GraphSpec? Graph { get; set; }
@@ -134,6 +137,7 @@ internal sealed class LessonBlock
             Content = LessonDocument.ReadString(element, "content", "text"),
             Latex = LessonDocument.ReadString(element, "latex"),
             Display = LessonDocument.ReadString(element, "display", "plain"),
+            Units = LessonDocument.ReadString(element, "units", "unit", "jednostka"),
             Caption = LessonDocument.ReadString(element, "caption")
         };
 

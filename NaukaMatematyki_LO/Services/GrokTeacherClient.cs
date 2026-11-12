@@ -108,7 +108,7 @@ internal sealed class GrokTeacherClient : IDisposable
         Jesteś cierpliwym nauczycielem {{{subject}}} w liceum ogólnokształcącym. Poziom: {{{level}}}.
         Uczeń może pisać, mówić albo wkleić zdjęcie zadania. Najpierw odczytaj treść, potem ucz — nie tylko podawaj wynik.
         Pisz po polsku, krótko, konkretnie, z intuicją i jednym przykładem liczbowym. Bez protekcjonalności.
-        Jeśli pytanie nie dotyczy matematyki ani fizyki, łagodnie wróć do nauki.
+        Jeśli pytanie nie dotyczy matematyki, fizyki ani chemii, łagodnie wróć do nauki.
         Odpowiadaj WYŁĄCZNIE jednym obiektem JSON, bez markdown i bez tekstu przed ani po nim.
         Schemat:
         {
@@ -116,7 +116,7 @@ internal sealed class GrokTeacherClient : IDisposable
           "headline": "jedno zdanie, o co chodzi",
           "blocks": [
             {"type":"text","content":"wyjaśnienie, 2-5 zdań"},
-            {"type":"formula","latex":"\\frac{-b \\pm \\sqrt{b^{2}-4ac}}{2a}","display":"czytelny zapis","caption":"co oznacza wzór"},
+            {"type":"formula","latex":"v=\\frac{s}{t}","display":"v = s/t","units":"km/s","caption":"prędkość to droga przez czas"},
             {"type":"steps","items":["Krok 1","Krok 2"]},
             {"type":"callout","content":"na co uważać albo co zapamiętać"},
             {"type":"graph","title":"nazwa wykresu","xLabel":"x","yLabel":"y","xMin":-5,"xMax":5,"series":[{"formula":"x^2-4*x+3","label":"f(x)","color":"#E8B04A"}],"points":[{"x":1,"y":0,"label":"miejsce zerowe"}]}
@@ -126,9 +126,12 @@ internal sealed class GrokTeacherClient : IDisposable
         }
         Zasady wykresu: formula używa zmiennej x (nawet gdy oś to czas — wtedy xLabel ustaw na t).
         Dozwolone: liczby z kropką, + - * / ^, nawiasy, x, pi, e oraz sin cos tan cot sqrt abs ln log exp.
-        Mnożenie zapisuj gwiazdką. Nie używaj LaTeX-a w formula. Dodaj wykres, gdy da się coś narysować: funkcję, ruch, zależność fizyczną, prostą, ciąg jako punkty.
-        Wzory lekcji podawaj w latex oraz w display. Używaj \\frac, \\sqrt, ^{}.
-        Przy fizyce podawaj jednostki i rozróżniaj wielkość od wartości.
+        Mnożenie zapisuj gwiazdką. Nie używaj LaTeX-a w formula. Dodaj wykres, gdy da się coś narysować: funkcję, ruch, zależność fizyczną albo chemiczną, prostą, ciąg jako punkty.
+        Wzory lekcji podawaj w latex oraz w display. Używaj \\frac, \\sqrt, ^{} oraz indeksów dolnych we wzorach chemicznych.
+        Przy fizyce i chemii podawaj jednostki i rozróżniaj wielkość od wartości.
+        Po każdym wzorze z jednostką wypełnij pole units wyraźnym zapisem jednostki, osobno od wzoru. Przykład: latex v=\\frac{s}{t}, display v = s/t, units km/s. Nie chowaj jednostki tylko w caption.
+        Jednostka ma pasować do wzoru: m/s, km/h, N, kg·m/s², mol/dm³, J, °C. Gdy wzór jest czysto matematyczny, units zostaw puste.
+        Chemia jest szkolna: bilansuj równania, licz mole, stężenia i pH. Nie podawaj przepisów syntezy substancji niebezpiecznych.
         """;
 
     public void Dispose() => _http.Dispose();

@@ -23,7 +23,7 @@ internal sealed class LessonBoard : Panel
         foreach (var card in _cards) card.Dispose();
         _cards.Clear();
         Controls.Clear();
-        if (includeWelcome || turns.Count == 0)
+        if (includeWelcome && turns.Count == 0)
             AddDocument(null, SampleLesson.Create());
         foreach (var turn in turns)
         {
@@ -49,6 +49,31 @@ internal sealed class LessonBoard : Panel
             graphics.DrawImage(piece, card.Left, card.Top - AutoScrollPosition.Y);
         }
         bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+    }
+
+    public void ExportPdf(string path)
+    {
+        var width = Math.Max(860, ClientSize.Width);
+        var height = Math.Max(240, _contentHeight + 24);
+        BoardPdf.Write(path, width, height, (graphics, top, sliceHeight) => PaintExport(graphics, top, sliceHeight));
+    }
+
+    private void PaintExport(Graphics graphics, int sliceTop, int sliceHeight)
+    {
+        graphics.Clear(Theme.Paper);
+        var scroll = AutoScrollPosition.Y;
+        foreach (var card in _cards)
+        {
+            var logicalTop = card.Top - scroll;
+            if (logicalTop + card.Height < sliceTop || logicalTop > sliceTop + sliceHeight) continue;
+            using var piece = new Bitmap(Math.Max(1, card.Width), Math.Max(1, card.Height), System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (var cardGraphics = Graphics.FromImage(piece))
+            {
+                cardGraphics.Clear(Color.Transparent);
+                card.Render(cardGraphics);
+            }
+            graphics.DrawImage(piece, card.Left, logicalTop - sliceTop);
+        }
     }
 
     private void AddDocument(StudyTurn? turn, LessonDocument lesson)
@@ -115,6 +140,20 @@ internal abstract class LessonCard : Panel
     }
 
     public abstract void Reflow(int width);
+
+    internal void Render(Graphics graphics)
+    {
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        PaintCard(graphics);
+        foreach (Control child in Controls)
+        {
+            if (!child.Visible || child.Width < 1 || child.Height < 1) continue;
+            using var piece = new Bitmap(child.Width, child.Height);
+            child.DrawToBitmap(piece, new Rectangle(0, 0, child.Width, child.Height));
+            graphics.DrawImage(piece, child.Left, child.Top);
+        }
+    }
 
     protected override void WndProc(ref Message m)
     {
@@ -244,24 +283,35 @@ internal sealed class FormulaCard(LessonBlock block) : LessonCard
 {
     public override void Reflow(int width)
     {
+        var units = string.IsNullOrWhiteSpace(block.Units) ? 0 : 34;
         var caption = string.IsNullOrWhiteSpace(block.Caption) ? 0 : 22;
-        Height = 118 + caption;
+        Height = 108 + units + caption;
     }
 
     protected override void PaintCard(Graphics graphics)
     {
+        var hasUnits = !string.IsNullOrWhiteSpace(block.Units);
+        var hasCaption = !string.IsNullOrWhiteSpace(block.Caption);
         FillRound(graphics, new Rectangle(0, 0, Width - 1, Height - 1), 14, Theme.Formula);
         using var pen = new Pen(Color.FromArgb(90, Theme.Copper), 1.2f);
         using var path = Round(new Rectangle(1, 1, Width - 3, Height - 3), 14);
         graphics.DrawPath(pen, path);
-        var area = new RectangleF(16, 8, Width - 32, Height - (string.IsNullOrWhiteSpace(block.Caption) ? 16 : 34));
+        var footer = (hasUnits ? 34 : 0) + (hasCaption ? 22 : 0);
+        var area = new RectangleF(16, 8, Width - 32, Height - 16 - footer);
         if (!FormulaLayout.TryRender(graphics, block.Latex, area, 26, Theme.Chalk, out _))
         {
             var fallback = string.IsNullOrWhiteSpace(block.Display) ? block.Latex ?? "" : block.Display;
             TextRenderer.DrawText(graphics, fallback, Theme.Math(20), Rectangle.Round(area), Theme.Chalk,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
         }
-        if (!string.IsNullOrWhiteSpace(block.Caption))
+        var y = Height - footer - 4;
+        if (hasUnits)
+        {
+            TextRenderer.DrawText(graphics, block.Units, Theme.Math(18, FontStyle.Bold), new Rectangle(16, y, Width - 32, 28),
+                Theme.Copper, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+            y += 34;
+        }
+        if (hasCaption)
         {
             TextRenderer.DrawText(graphics, block.Caption, Theme.Tiny, new Rectangle(16, Height - 24, Width - 32, 18),
                 Theme.Copper, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
