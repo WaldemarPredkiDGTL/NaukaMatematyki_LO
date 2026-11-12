@@ -74,6 +74,46 @@ internal sealed class GrokTeacherClient : IDisposable
         return text;
     }
 
+    public async Task<string> PolishSpeechAsync(
+        string apiKey,
+        string model,
+        string subject,
+        string transcript,
+        CancellationToken cancellationToken)
+    {
+        var messages = new JsonArray
+        {
+            new JsonObject
+            {
+                ["role"] = "system",
+                ["content"] = "Poprawiasz polską transkrypcję mowy ucznia liceum. Przedmiot: " + subject + ". " +
+                    "Zwróć wyłącznie poprawione pytanie, bez cudzysłowu, komentarza i wyjaśnienia. " +
+                    "Zachowaj sens, liczby, symbole i nazwy. Popraw powtórzenia, urwane słowa i błędy rozpoznawania. " +
+                    "Nie dodawaj odpowiedzi ani treści, której uczeń nie powiedział."
+            },
+            new JsonObject { ["role"] = "user", ["content"] = transcript }
+        };
+        var payload = new JsonObject
+        {
+            ["model"] = string.IsNullOrWhiteSpace(model) ? "grok-4" : model.Trim(),
+            ["temperature"] = 0,
+            ["max_tokens"] = 400,
+            ["messages"] = messages
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.x.ai/v1/chat/completions");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
+        request.Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
+        using var response = await _http.SendAsync(request, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(ReadError(body) ?? $"xAI zwróciło {(int)response.StatusCode}.");
+
+        var root = JsonNode.Parse(body) as JsonObject
+            ?? throw new InvalidOperationException("Pusta odpowiedź xAI.");
+        return ReadContent(root["choices"]?[0]?["message"]?["content"]).Trim().Trim('"', '„', '”');
+    }
+
     private static string? ReadError(string body)
     {
         try

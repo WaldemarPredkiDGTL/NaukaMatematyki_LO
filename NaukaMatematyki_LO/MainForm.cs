@@ -220,11 +220,7 @@ internal sealed class MainForm : Form
 
     private void Wire()
     {
-        _voice.Recognized += text => BeginInvoke(() =>
-        {
-            if (_input.TextLength > 0 && !_input.Text.EndsWith(' ')) _input.AppendText(" ");
-            _input.AppendText(text);
-        });
+        _voice.Recognized += text => BeginInvoke(() => _ = InsertSpokenTextAsync(text));
         _voice.Status += text => BeginInvoke(() => _status.Text = text);
         _voice.StateChanged += () => BeginInvoke(RefreshMic);
         FormClosed += (_, _) =>
@@ -441,6 +437,35 @@ internal sealed class MainForm : Form
         _settings.Level = _level.Text;
         _settings.ProtectedKey = SettingsStore.Protect(key);
         SettingsStore.Save(_settings);
+    }
+
+    private async Task InsertSpokenTextAsync(string text)
+    {
+        var corrected = text;
+        if (!string.IsNullOrWhiteSpace(_key.Text))
+        {
+            _status.Text = "Grok poprawia rozpoznany tekst…";
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                var polished = await _teacher.PolishSpeechAsync(
+                    _key.Text,
+                    _model.Text,
+                    string.IsNullOrWhiteSpace(_settings.Subject) ? "Matematyka" : _settings.Subject,
+                    text,
+                    cts.Token);
+                if (!string.IsNullOrWhiteSpace(polished)) corrected = polished;
+            }
+            catch (Exception ex)
+            {
+                _status.Text = "Nie udało się poprawić tekstu: " + ex.Message;
+            }
+        }
+
+        if (_input.TextLength > 0 && !_input.Text.EndsWith(' ')) _input.AppendText(" ");
+        _input.AppendText(corrected);
+        if (!_status.Text.StartsWith("Nie udało się", StringComparison.Ordinal))
+            _status.Text = "Grok poprawił tekst z mikrofonu. Możesz wysłać albo jeszcze poprawić.";
     }
 
     private void ToggleMic()
