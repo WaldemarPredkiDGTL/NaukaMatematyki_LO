@@ -198,20 +198,42 @@ internal sealed class VoiceInput : IDisposable
     {
         using var input = new MemoryStream(source, writable: false);
         using var reader = new WaveFileReader(input);
-        var format = new WaveFormat(16000, 16, 1);
-        if (reader.WaveFormat.SampleRate == format.SampleRate && reader.WaveFormat.Channels == 1 && reader.WaveFormat.BitsPerSample == 16)
+        var target = new WaveFormat(16000, 16, 1);
+        var sourceFormat = reader.WaveFormat;
+        if (sourceFormat.Encoding == WaveFormatEncoding.Pcm && sourceFormat.SampleRate == target.SampleRate && sourceFormat.Channels == 1 && sourceFormat.BitsPerSample == 16)
             return source;
 
         using var output = new MemoryStream();
-        using var resampler = new MediaFoundationResampler(reader, format) { ResamplerQuality = 60 };
-        using (var writer = new WaveFileWriter(new LeaveOpenStream(output), format))
+        using var resampler = new MediaFoundationResampler(AsPcmOrFloat(reader), target) { ResamplerQuality = 60 };
+        using (var writer = new WaveFileWriter(new LeaveOpenStream(output), target))
         {
-            var buffer = new byte[format.AverageBytesPerSecond];
+            var buffer = new byte[target.AverageBytesPerSecond];
             int read;
             while ((read = resampler.Read(buffer.AsSpan())) > 0)
                 writer.Write(buffer, 0, read);
         }
         return output.ToArray();
+    }
+
+    private static IWaveProvider AsPcmOrFloat(IWaveProvider source)
+    {
+        var format = source.WaveFormat;
+        if (format.Encoding is WaveFormatEncoding.Pcm or WaveFormatEncoding.IeeeFloat)
+            return source;
+
+        var subType = format is WaveFormatExtensible extensible ? extensible.SubFormat : Guid.Empty;
+        var plain = subType == IeeeFloatSubType || format.BitsPerSample == 32
+            ? WaveFormat.CreateIeeeFloatWaveFormat(format.SampleRate, format.Channels)
+            : new WaveFormat(format.SampleRate, Math.Max(16, format.BitsPerSample), format.Channels);
+        return new WaveFormatAdapter(source, plain);
+    }
+
+    private static readonly Guid IeeeFloatSubType = new("00000003-0000-0010-8000-00AA00389B71");
+
+    private sealed class WaveFormatAdapter(IWaveProvider source, WaveFormat format) : IWaveProvider
+    {
+        public WaveFormat WaveFormat { get; } = format;
+        public int Read(Span<byte> buffer) => source.Read(buffer);
     }
 
     private sealed class LeaveOpenStream(Stream inner) : Stream
