@@ -30,6 +30,7 @@ internal sealed class MainForm : Form
 
     public MainForm()
     {
+        _voice.ApiKey = () => _key.Text;
         Text = "Pracownia — matematyka, fizyka i chemia";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1100, 720);

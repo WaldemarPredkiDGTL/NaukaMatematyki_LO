@@ -1,18 +1,16 @@
-using System.Text;
+using System.Net.Http.Headers;
+using System.Text.Json;
 using NAudio.Wave;
-using Whisper.net;
-using Whisper.net.Ggml;
 
 namespace NaukaMatematyki_LO;
 
 internal sealed class VoiceInput : IDisposable
 {
     private readonly object _gate = new();
+    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
     private WasapiRecorder? _capture;
     private WaveFileWriter? _writer;
     private MemoryStream? _recording;
-    private WhisperFactory? _factory;
-    private WhisperProcessor? _processor;
     private CancellationTokenSource? _prepare;
     private bool _listening;
     private bool _transcribing;
@@ -22,6 +20,8 @@ internal sealed class VoiceInput : IDisposable
     public event Action<string>? Recognized;
     public event Action<string>? Status;
     public event Action? StateChanged;
+
+    public Func<string>? ApiKey { get; set; }
 
     public void Toggle()
     {
@@ -51,7 +51,8 @@ internal sealed class VoiceInput : IDisposable
         var token = _prepare.Token;
         try
         {
-            await EnsureModelAsync(token);
+            if (string.IsNullOrWhiteSpace(ApiKey?.Invoke()))
+                throw new InvalidOperationException("Wpisz klucz xAI — mikrofon wysyła nagranie do Grok.");
             if (!_listening || token.IsCancellationRequested) return;
 
             var capture = new WasapiRecorderBuilder().WithSharedMode().Build();
@@ -119,24 +120,14 @@ internal sealed class VoiceInput : IDisposable
         _transcribing = true;
         try
         {
-            Status?.Invoke("Spisuję wypowiedź…");
+            var apiKey = ApiKey?.Invoke();
+            if (string.IsNullOrWhiteSpace(apiKey))
+                throw new InvalidOperationException("Wpisz klucz xAI — mikrofon wysyła nagranie do Grok.");
+
+            Status?.Invoke("Grok spisuje wypowiedź…");
             var wav = Resample(recorded);
-            if (wav.Length < 8000)
-            {
-                Status?.Invoke("Za krótko. Powiedz pytanie i kliknij Stop.");
-                return;
-            }
-
-            EnsureProcessor();
-            await using var stream = new MemoryStream(wav);
-            var text = new StringBuilder();
-            await foreach (var segment in _processor!.ProcessAsync(stream))
-            {
-                var piece = segment.Text?.Trim();
-                if (!string.IsNullOrWhiteSpace(piece)) text.Append(piece).Append(' ');
-            }
-
-            var spoken = text.ToString().Trim();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            var spoken = await TranscribeAsync(apiKey, wav, cts.Token);
             if (string.IsNullOrWhiteSpace(spoken))
                 Status?.Invoke("Nie rozpoznałem mowy. Spróbuj jeszcze raz, bliżej mikrofonu.");
             else
@@ -155,40 +146,39 @@ internal sealed class VoiceInput : IDisposable
         }
     }
 
-    private async Task<string> EnsureModelAsync(CancellationToken token)
+    private async Task<string> TranscribeAsync(string apiKey, byte[] wav, CancellationToken token)
     {
-        var path = ModelPath();
-        if (File.Exists(path) && new FileInfo(path).Length > 1_000_000) return path;
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        Status?.Invoke("Pobieram polski model mowy, około 150 MB. To tylko raz.");
-        var part = path + ".part";
-        await using (var model = await WhisperGgmlDownloader.Default.GetGgmlModelAsync(GgmlType.Base, QuantizationType.NoQuantization, token))
-        await using (var file = File.Create(part))
-            await model.CopyToAsync(file, token);
-        File.Move(part, path, overwrite: true);
-        Status?.Invoke("Model gotowy. Słucham…");
-        return path;
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent("grok-voice-transcribe-2.0"), "model");
+        form.Add(new StringContent("pl"), "language");
+        var file = new ByteArrayContent(wav);
+        file.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
+        form.Add(file, "file", "nagranie.wav");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.x.ai/v1/stt");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
+        request.Content = form;
+        using var response = await _http.SendAsync(request, token);
+        var body = await response.Content.ReadAsStringAsync(token);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(ReadError(body) ?? $"xAI zwróciło {(int)response.StatusCode}.");
+
+        using var doc = JsonDocument.Parse(body);
+        return doc.RootElement.TryGetProperty("text", out var text) ? text.GetString()?.Trim() ?? "" : "";
     }
 
-    private void EnsureProcessor()
+    private static string? ReadError(string body)
     {
-        if (_processor is not null) return;
-        var threads = Math.Clamp(Environment.ProcessorCount, 2, 8);
-        _factory ??= WhisperFactory.FromPath(ModelPath());
-        _processor = _factory.CreateBuilder()
-            .WithLanguage("pl")
-            .WithThreads(threads)
-            .WithNoContext()
-            .WithSingleSegment()
-            .WithTemperature(0)
-            .WithPrompt("Pytanie z matematyki, fizyki albo chemii po polsku. Wielomiany, równanie, funkcja, wzór, jednostka.")
-            .Build();
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("error", out var error) &&
+                error.TryGetProperty("message", out var message))
+                return message.GetString();
+        }
+        catch (Exception) { }
+        return body.Length > 280 ? body[..280] : body;
     }
-
-    private static string ModelPath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "NaukaMatematyki_LO",
-        "ggml-base.bin");
 
     private byte[]? TakeRecording()
     {
@@ -285,10 +275,7 @@ internal sealed class VoiceInput : IDisposable
             _capture?.Dispose();
             _capture = null;
         }
-        _processor?.Dispose();
-        _processor = null;
-        _factory?.Dispose();
-        _factory = null;
+        _http.Dispose();
         _prepare?.Dispose();
     }
 }
