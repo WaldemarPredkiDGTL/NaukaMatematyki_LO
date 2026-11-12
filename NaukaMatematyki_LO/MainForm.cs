@@ -441,18 +441,18 @@ internal sealed class MainForm : Form
 
     private async Task InsertSpokenTextAsync(string text)
     {
-        var corrected = text;
+        var corrected = CleanTranscript(text);
         if (!string.IsNullOrWhiteSpace(_key.Text))
         {
             _status.Text = "Grok poprawia rozpoznany tekst…";
             try
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
                 var polished = await _teacher.PolishSpeechAsync(
                     _key.Text,
                     _model.Text,
                     string.IsNullOrWhiteSpace(_settings.Subject) ? "Matematyka" : _settings.Subject,
-                    text,
+                    corrected,
                     cts.Token);
                 if (!string.IsNullOrWhiteSpace(polished)) corrected = polished;
             }
@@ -466,6 +466,20 @@ internal sealed class MainForm : Form
         _input.AppendText(corrected);
         if (!_status.Text.StartsWith("Nie udało się", StringComparison.Ordinal))
             _status.Text = "Grok poprawił tekst z mikrofonu. Możesz wysłać albo jeszcze poprawić.";
+    }
+
+    private static string CleanTranscript(string text)
+    {
+        var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0) return "";
+        var kept = new List<string>(words.Length);
+        foreach (var word in words)
+        {
+            if (kept.Count > 0 && string.Equals(kept[^1], word, StringComparison.OrdinalIgnoreCase)) continue;
+            kept.Add(word);
+        }
+        var sentence = string.Join(' ', kept).Trim();
+        return sentence.Length > 0 ? char.ToUpper(sentence[0]) + sentence[1..] : sentence;
     }
 
     private void ToggleMic()

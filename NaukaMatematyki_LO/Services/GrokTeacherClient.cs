@@ -97,7 +97,7 @@ internal sealed class GrokTeacherClient : IDisposable
         {
             ["model"] = string.IsNullOrWhiteSpace(model) ? "grok-4" : model.Trim(),
             ["temperature"] = 0,
-            ["max_tokens"] = 400,
+            ["max_tokens"] = 120,
             ["messages"] = messages
         };
 

@@ -12,6 +12,7 @@ internal sealed class VoiceInput : IDisposable
     private WaveFileWriter? _writer;
     private MemoryStream? _recording;
     private WhisperFactory? _factory;
+    private WhisperProcessor? _processor;
     private CancellationTokenSource? _prepare;
     private bool _listening;
     private bool _transcribing;
@@ -126,12 +127,10 @@ internal sealed class VoiceInput : IDisposable
                 return;
             }
 
-            var model = ModelPath();
-            _factory ??= WhisperFactory.FromPath(model);
-            using var processor = _factory.CreateBuilder().WithLanguage("pl").Build();
+            EnsureProcessor();
             await using var stream = new MemoryStream(wav);
             var text = new StringBuilder();
-            await foreach (var segment in processor.ProcessAsync(stream))
+            await foreach (var segment in _processor!.ProcessAsync(stream))
             {
                 var piece = segment.Text?.Trim();
                 if (!string.IsNullOrWhiteSpace(piece)) text.Append(piece).Append(' ');
@@ -169,6 +168,21 @@ internal sealed class VoiceInput : IDisposable
         File.Move(part, path, overwrite: true);
         Status?.Invoke("Model gotowy. Słucham…");
         return path;
+    }
+
+    private void EnsureProcessor()
+    {
+        if (_processor is not null) return;
+        var threads = Math.Clamp(Environment.ProcessorCount, 2, 8);
+        _factory ??= WhisperFactory.FromPath(ModelPath());
+        _processor = _factory.CreateBuilder()
+            .WithLanguage("pl")
+            .WithThreads(threads)
+            .WithNoContext()
+            .WithSingleSegment()
+            .WithTemperature(0)
+            .WithPrompt("Pytanie z matematyki, fizyki albo chemii po polsku. Wielomiany, równanie, funkcja, wzór, jednostka.")
+            .Build();
     }
 
     private static string ModelPath() => Path.Combine(
@@ -271,6 +285,8 @@ internal sealed class VoiceInput : IDisposable
             _capture?.Dispose();
             _capture = null;
         }
+        _processor?.Dispose();
+        _processor = null;
         _factory?.Dispose();
         _factory = null;
         _prepare?.Dispose();
