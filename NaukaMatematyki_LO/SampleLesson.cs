@@ -13,7 +13,7 @@ internal static class SampleLesson
             new LessonBlock
             {
                 Type = "text",
-                Content = "Możesz zapytać tekstem, przytrzymać mikrofon albo wkleić zdjęcie zadania. Odpowiedź ułożę jako lekcję: najpierw sens, potem wzór, kroki i wykres. Fizyka i chemia korzystają z tej samej tablicy — zmieniasz przedmiot z lewej."
+                Content = "Możesz zapytać tekstem, użyć mikrofonu albo wkleić zdjęcie zadania. Odpowiedź ułożę jako lekcję: cel, wyjaśnienie, przykład, opis rozwiązania i następne zadanie. Z lewej wybierasz matematykę, fizykę, chemię, język polski albo angielski."
             },
             new LessonBlock
             {

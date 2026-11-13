@@ -87,6 +87,7 @@ internal sealed class VoiceInput : IDisposable
         catch (Exception ex)
         {
             StopListening();
+            AppLog.Error("Mikrofon", ex);
             Status?.Invoke(ex.Message);
         }
     }
@@ -129,7 +130,10 @@ internal sealed class VoiceInput : IDisposable
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
             var spoken = await TranscribeAsync(apiKey, wav, cts.Token);
             if (string.IsNullOrWhiteSpace(spoken))
+            {
+                AppLog.Problem("Mikrofon", "Pusta transkrypcja.");
                 Status?.Invoke("Nie rozpoznałem mowy. Spróbuj jeszcze raz, bliżej mikrofonu.");
+            }
             else
             {
                 Recognized?.Invoke(spoken);
@@ -138,6 +142,7 @@ internal sealed class VoiceInput : IDisposable
         }
         catch (Exception ex)
         {
+            AppLog.Error("Mikrofon", ex);
             Status?.Invoke(ex.Message);
         }
         finally

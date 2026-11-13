@@ -20,6 +20,8 @@ internal sealed class MainForm : Form
     private readonly Button _math = new();
     private readonly Button _physics = new();
     private readonly Button _chemistry = new();
+    private readonly Button _polish = new();
+    private readonly Button _english = new();
     private readonly List<AttachedImage> _images = [];
     private readonly List<StudyTurn> _historyItems = [];
     private readonly List<StudyTurn> _session = [];
@@ -31,7 +33,7 @@ internal sealed class MainForm : Form
     public MainForm()
     {
         _voice.ApiKey = () => _key.Text;
-        Text = "Pracownia — matematyka, fizyka i chemia";
+        Text = "Pracownia LO — przedmioty ścisłe i języki";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1100, 720);
         Size = new Size(1360, 860);
@@ -104,24 +106,28 @@ internal sealed class MainForm : Form
         _math.Text = "Matematyka";
         _physics.Text = "Fizyka";
         _chemistry.Text = "Chemia";
+        _polish.Text = "Polski";
+        _english.Text = "Angielski";
         StyleChoice(_math);
         StyleChoice(_physics);
         StyleChoice(_chemistry);
+        StyleChoice(_polish);
+        StyleChoice(_english);
         _math.Location = new Point(14, 14);
         _physics.Location = new Point(122, 14);
         _chemistry.Location = new Point(230, 14);
         _math.Width = 100;
         _physics.Width = 100;
         _chemistry.Width = 92;
-        var levelLabel = new Label { Text = "POZIOM", ForeColor = Theme.Muted, Font = Theme.TinyBold, Location = new Point(16, 60), AutoSize = true };
+        var levelLabel = new Label { Text = "POZIOM", ForeColor = Theme.Muted, Font = Theme.TinyBold, Location = new Point(16, 102), AutoSize = true };
         _level.DropDownStyle = ComboBoxStyle.DropDownList;
         _level.FlatStyle = FlatStyle.Flat;
         _level.Items.AddRange(["Podstawowy", "Rozszerzony", "Dopasuj do pytania"]);
-        _level.Location = new Point(16, 80);
+        _level.Location = new Point(16, 122);
         _level.Width = 304;
         StyleField(_level);
-        var topicLabel = new Label { Text = "TEMATY", ForeColor = Theme.Muted, Font = Theme.TinyBold, Location = new Point(16, 116), AutoSize = true };
-        _topics.Location = new Point(14, 138);
+        var topicLabel = new Label { Text = "TEMATY", ForeColor = Theme.Muted, Font = Theme.TinyBold, Location = new Point(16, 158), AutoSize = true };
+        _topics.Location = new Point(14, 180);
         _topics.Size = new Size(308, 250);
         _topics.FlowDirection = FlowDirection.TopDown;
         _topics.WrapContents = false;
@@ -135,7 +141,7 @@ internal sealed class MainForm : Form
         _history.ForeColor = Theme.Chalk;
         _history.Font = Theme.Small;
         _history.IntegralHeight = false;
-        sidebar.Controls.AddRange([_math, _physics, _chemistry, levelLabel, _level, topicLabel, _topics, historyLabel, _history]);
+        sidebar.Controls.AddRange([_math, _physics, _chemistry, _polish, _english, levelLabel, _level, topicLabel, _topics, historyLabel, _history]);
         sidebar.Resize += (_, _) =>
         {
             _history.Height = Math.Max(80, sidebar.Height - _history.Top - 16);
@@ -209,6 +215,8 @@ internal sealed class MainForm : Form
         _math.Click += (_, _) => SetSubject("Matematyka");
         _physics.Click += (_, _) => SetSubject("Fizyka");
         _chemistry.Click += (_, _) => SetSubject("Chemia");
+        _polish.Click += (_, _) => SetSubject("Język polski");
+        _english.Click += (_, _) => SetSubject("Język angielski");
         _history.SelectedIndexChanged += (_, _) => OpenSelectedHistory();
         _input.KeyDown += InputKeyDown;
         DragEnter += (_, e) => { if (e.Data?.GetDataPresent(DataFormats.FileDrop) == true) e.Effect = DragDropEffects.Copy; };
@@ -239,7 +247,11 @@ internal sealed class MainForm : Form
         _level.SelectedItem = _settings.Level;
         if (_level.SelectedIndex < 0) _level.SelectedIndex = 1;
         try { _key.Text = SettingsStore.Unprotect(_settings.ProtectedKey); }
-        catch (Exception) { _key.Text = ""; }
+        catch (Exception ex)
+        {
+            AppLog.Error("Ustawienia", ex);
+            _key.Text = "";
+        }
         _historyItems.AddRange(SettingsStore.LoadHistory());
         BindHistory();
         SetSubject(string.IsNullOrWhiteSpace(_settings.Subject) ? "Matematyka" : _settings.Subject);
@@ -255,6 +267,9 @@ internal sealed class MainForm : Form
         _math.SetBounds(14, 14, width, 34);
         _physics.SetBounds(14 + width + gap, 14, width, 34);
         _chemistry.SetBounds(14 + (width + gap) * 2, 14, width, 34);
+        var languageWidth = Math.Max(110, (sidebarWidth - 28 - gap) / 2);
+        _polish.SetBounds(14, 56, languageWidth, 34);
+        _english.SetBounds(14 + languageWidth + gap, 56, languageWidth, 34);
     }
 
     private void SetSubject(string subject)
@@ -263,6 +278,8 @@ internal sealed class MainForm : Form
         PaintSubject(_math, subject == "Matematyka", Theme.Copper);
         PaintSubject(_physics, subject == "Fizyka", Theme.Sky);
         PaintSubject(_chemistry, subject == "Chemia", Theme.Sage);
+        PaintSubject(_polish, subject == "Język polski", Theme.Copper);
+        PaintSubject(_english, subject == "Język angielski", Theme.Sky);
         RebuildTopics();
     }
 
@@ -421,6 +438,7 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex)
         {
+            AppLog.Error("Lekcja", ex);
             _status.Text = ex.Message;
         }
         finally
@@ -459,6 +477,7 @@ internal sealed class MainForm : Form
             }
             catch (Exception ex)
             {
+                AppLog.Error("Mikrofon", ex);
                 _status.Text = "Nie udało się poprawić tekstu: " + ex.Message;
             }
         }
@@ -492,6 +511,7 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex)
         {
+            AppLog.Error("Mikrofon", ex);
             _status.Text = ex.Message;
         }
     }
@@ -549,6 +569,7 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex)
         {
+            AppLog.Error("Obraz", ex);
             _status.Text = ex.Message;
         }
     }
@@ -637,6 +658,7 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex)
         {
+            AppLog.Error("Eksport", ex);
             _status.Text = ex.Message;
         }
     }
@@ -683,6 +705,8 @@ internal sealed class MainForm : Form
     {
         "Fizyka" => PhysicsTopics,
         "Chemia" => ChemistryTopics,
+        "Język polski" => PolishTopics,
+        "Język angielski" => EnglishTopics,
         _ => MathTopics
     };
 
@@ -718,6 +742,30 @@ internal sealed class MainForm : Form
         ("Wiązania", "Porównaj wiązanie jonowe, kowalencyjne i metaliczne na przykładach NaCl, H2O i miedzi."),
         ("Szybkość reakcji", "Stężenie substratu maleje jak c(t)=2*exp(-0.3*x). We wzorze wykresu użyj x jako czasu. Odczytaj stężenie po 4 jednostkach czasu."),
         ("Termochemia", "Reakcja ma ΔH = -286 kJ/mol. Wytłumacz, czy jest egzo- czy endotermiczna i co to znaczy dla ciepła.")
+    ];
+
+    private static readonly (string Label, string Prompt)[] PolishTopics =
+    [
+        ("Argumentacja", "Ułóż plan rozprawki o tym, czy literatura pomaga rozumieć wybory człowieka. Podaj tezę, dwa argumenty, przykład literacki i wniosek."),
+        ("Interpretacja", "Pokaż, jak interpretować wiersz: najpierw sytuacja liryczna, potem obrazy poetyckie, środki stylistyczne i sens."),
+        ("Środki stylistyczne", "Porównaj metaforę, porównanie, epitety i ironię. Daj po jednym własnym przykładzie i powiedz, czemu służą."),
+        ("Kultura języka", "Popraw styl zdania: „Autor w swoim dziele porusza problem i ukazuje go w sposób bardzo bardzo ciekawy”. Wyjaśnij poprawki."),
+        ("Retoryka", "Przygotuj krótką wypowiedź argumentacyjną: teza, argument, kontrargument i wniosek. Temat: czytanie dłuższych tekstów."),
+        ("Konteksty", "Wytłumacz, jak połączyć tekst literacki z kontekstem historycznym i filozoficznym, nie streszczając całego utworu."),
+        ("Notatka syntetyzująca", "Pokaż budowę notatki syntetyzującej na podstawie dwóch stanowisk o roli szkoły."),
+        ("Lektura", "Jak przygotować się do pytania o lekturę obowiązkową? Ułóż schemat: bohater, konflikt, motyw i własna ocena.")
+    ];
+
+    private static readonly (string Label, string Prompt)[] EnglishTopics =
+    [
+        ("Czasy", "Porównaj Present Perfect i Past Simple. Podaj zasadę, dwa zdania po angielsku i krótkie wyjaśnienie po polsku."),
+        ("Conditionals", "Wytłumacz drugi tryb warunkowy. Daj trzy przykłady o wyborach życiowych i zaznacz formę czasownika."),
+        ("Słownictwo", "Naucz słownictwa school and learning na poziomie LO. Podaj wyrażenia, kolokacje i krótkie zdania."),
+        ("Czytanie", "Pokaż strategię czytania tekstu maturalnego: skanowanie, słowa kluczowe, pułapki w odpowiedziach i uzasadnienie wyboru."),
+        ("Wypowiedź pisemna", "Ułóż plan e-maila formalnego po angielsku: cel, trzy akapity, zwroty grzecznościowe i typowe błędy."),
+        ("Mediacja", "Przetłumacz sens polskiej prośby na naturalny angielski: „Czy mógłby Pan przesunąć termin sprawdzianu?” Wyjaśnij rejestr."),
+        ("Wymowa", "Pokaż różnicę między ship i sheep, live i leave oraz thought i taught. Zapisz wymowę prostym zapisem."),
+        ("Gramatyka", "Wytłumacz przedimki a, an i the na przykładach z życia licealisty. Dodaj zadanie z lukami.")
     ];
 
     private sealed record AttachedImage(Bitmap Full, Bitmap Thumb, byte[] Png);

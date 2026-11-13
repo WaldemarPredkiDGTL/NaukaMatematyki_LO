@@ -9,6 +9,8 @@ internal sealed class LessonDocument
     public string Headline { get; set; } = "";
     public string CheckQuestion { get; set; } = "";
     public string CheckAnswer { get; set; } = "";
+    public string Solution { get; set; } = "";
+    public string NextTask { get; set; } = "";
     public string RawText { get; set; } = "";
     public List<LessonBlock> Blocks { get; set; } = [];
 
@@ -39,6 +41,8 @@ internal sealed class LessonDocument
             lesson.Headline = ReadString(root, "headline") ?? "";
             lesson.CheckQuestion = ReadString(root, "checkQuestion", "check_question") ?? "";
             lesson.CheckAnswer = ReadString(root, "checkAnswer", "check_answer") ?? "";
+            lesson.Solution = ReadString(root, "solution", "rozwiazanie", "rozwiązanie") ?? "";
+            lesson.NextTask = ReadString(root, "nextTask", "next_task", "nastepneZadanie") ?? "";
 
             if (root.TryGetProperty("blocks", out var blocks) && blocks.ValueKind == JsonValueKind.Array)
             {
@@ -77,7 +81,9 @@ internal sealed class LessonDocument
             };
             if (!string.IsNullOrWhiteSpace(bit)) parts.Add(bit.Trim());
         }
+        if (!string.IsNullOrWhiteSpace(Solution)) parts.Add("Rozwiązanie: " + Solution);
         if (!string.IsNullOrWhiteSpace(CheckQuestion)) parts.Add("Pytanie: " + CheckQuestion);
+        if (!string.IsNullOrWhiteSpace(NextTask)) parts.Add("Następne zadanie: " + NextTask);
         var text = string.Join("\n", parts);
         return text.Length <= 3500 ? text : text[..3500];
     }

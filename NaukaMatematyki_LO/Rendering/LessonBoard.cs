@@ -93,8 +93,12 @@ internal sealed class LessonBoard : Panel
             };
             if (card is not null) Add(card);
         }
+        if (!string.IsNullOrWhiteSpace(lesson.Solution))
+            Add(new SolutionCard(lesson.Solution));
         if (!string.IsNullOrWhiteSpace(lesson.CheckQuestion))
             Add(new CheckCard(lesson.CheckQuestion, lesson.CheckAnswer));
+        if (!string.IsNullOrWhiteSpace(lesson.NextTask))
+            Add(new NextTaskCard(lesson.NextTask));
     }
 
     private void Add(LessonCard card)
@@ -380,6 +384,38 @@ internal sealed class GraphCard(LessonBlock block) : LessonCard
             TextRenderer.DrawText(graphics, block.Caption, Theme.Small, new Rectangle(8, Height - 22, Width - 16, 18),
                 Theme.Muted, TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
         }
+    }
+}
+
+internal sealed class SolutionCard(string solution) : LessonCard
+{
+    public override void Reflow(int width)
+    {
+        Height = 36 + TextHeight(solution, Theme.Body, width - 40) + 16;
+    }
+
+    protected override void PaintCard(Graphics graphics)
+    {
+        FillRound(graphics, new Rectangle(0, 0, Width - 1, Height - 1), 14, Theme.PaperAlt);
+        TextRenderer.DrawText(graphics, "JAK TO ROZWIĄZAĆ", Theme.TinyBold, new Rectangle(18, 10, Width - 36, 16), Theme.Copper);
+        TextRenderer.DrawText(graphics, solution, Theme.Body, new Rectangle(18, 30, Width - 40, Height - 42),
+            Theme.InkText, TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
+    }
+}
+
+internal sealed class NextTaskCard(string task) : LessonCard
+{
+    public override void Reflow(int width)
+    {
+        Height = 36 + TextHeight(task, Theme.BodyBold, width - 40) + 16;
+    }
+
+    protected override void PaintCard(Graphics graphics)
+    {
+        FillRound(graphics, new Rectangle(0, 0, Width - 1, Height - 1), 14, Theme.Paper);
+        TextRenderer.DrawText(graphics, "NASTĘPNE ZADANIE", Theme.TinyBold, new Rectangle(18, 10, Width - 36, 16), Theme.Sky);
+        TextRenderer.DrawText(graphics, task, Theme.BodyBold, new Rectangle(18, 30, Width - 40, Height - 42),
+            Theme.InkText, TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
     }
 }
 
