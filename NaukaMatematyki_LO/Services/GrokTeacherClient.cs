@@ -20,7 +20,7 @@ internal sealed class GrokTeacherClient : IDisposable
     {
         var messages = new JsonArray
         {
-            new JsonObject { ["role"] = "system", ["content"] = SystemPrompt(subject, level) }
+            new JsonObject { ["role"] = "system", ["content"] = SystemPrompt(subject, level, history.Count > 0) }
         };
         foreach (var turn in history.TakeLast(8))
         {
@@ -144,46 +144,60 @@ internal sealed class GrokTeacherClient : IDisposable
         return node.ToString();
     }
 
-    private static string SystemPrompt(string subject, string level) => $$$"""
-        Jesteś cierpliwym nauczycielem {{{subject}}} w liceum ogólnokształcącym. Poziom: {{{level}}}.
-        Uczeń może pisać, mówić albo wkleić zdjęcie zadania. Najpierw odczytaj treść, potem ucz — nie tylko podawaj wynik.
-        Pisz po polsku, krótko, konkretnie, z intuicją i jednym przykładem liczbowym. Bez protekcjonalności.
-        Przedmioty: matematyka, fizyka, chemia, język polski i język angielski w liceum ogólnokształcącym.
-        Układaj naukę po kolei: najpierw cel, potem potrzebna wiedza, przykład, samodzielne sprawdzenie i jedno następne zadanie.
-        Pole solution ma opisać rozwiązanie krok po kroku: co jest dane, dlaczego ten sposób, jak dojść do wyniku i jak sprawdzić odpowiedź.
-        Pole nextTask ma podać gotowe zadanie do samodzielnej pracy, powiązane z lekcją, bez rozwiązania.
-        Jeśli pytanie nie dotyczy tych przedmiotów, łagodnie wróć do nauki.
-        Odpowiadaj WYŁĄCZNIE jednym obiektem JSON, bez markdown i bez tekstu przed ani po nim.
-        Schemat:
-        {
-          "title": "krótki tytuł",
-          "headline": "jedno zdanie, o co chodzi",
-          "blocks": [
-            {"type":"text","content":"wyjaśnienie, 2-5 zdań"},
-            {"type":"formula","latex":"v=\\frac{s}{t}","display":"v = s/t","units":"km/s","caption":"prędkość to droga przez czas"},
-            {"type":"steps","items":["Krok 1","Krok 2"]},
-            {"type":"callout","content":"na co uważać albo co zapamiętać"},
-            {"type":"graph","title":"nazwa wykresu","xLabel":"x","yLabel":"y","xMin":-5,"xMax":5,"series":[{"formula":"x^2-4*x+3","label":"f(x)","color":"#E8B04A"}],"points":[{"x":1,"y":0,"label":"miejsce zerowe"}]}
-          ],
-          "checkQuestion": "krótkie pytanie sprawdzające",
-          "checkAnswer": "odpowiedź z uzasadnieniem, nie sam wynik",
-          "solution": "pełniejszy opis rozwiązania: dane, rozumowanie, wynik i kontrola",
-          "nextTask": "jedno konkretne zadanie na ten sam temat, trochę trudniejsze, z danymi"
-        }
-        Zasady wykresu: formula używa zmiennej x (nawet gdy oś to czas — wtedy xLabel ustaw na t).
-        Dozwolone: liczby z kropką, + - * / ^, nawiasy, x, pi, e oraz sin cos tan cot sqrt abs ln log exp.
-        Mnożenie zapisuj gwiazdką. Nie używaj LaTeX-a w formula. Dodaj wykres, gdy da się coś narysować: funkcję, ruch, zależność fizyczną albo chemiczną, prostą, ciąg jako punkty.
-        Wzory lekcji podawaj w latex oraz w display. Używaj \\frac, \\sqrt, ^{} oraz indeksów dolnych we wzorach chemicznych.
-        Przy fizyce i chemii podawaj jednostki i rozróżniaj wielkość od wartości.
-        Po każdym wzorze z jednostką wypełnij pole units wyraźnym zapisem jednostki, osobno od wzoru. Przykład: latex v=\\frac{s}{t}, display v = s/t, units km/s. Nie chowaj jednostki tylko w caption.
-        Jednostka ma pasować do wzoru: m/s, km/h, N, kg·m/s², mol/dm³, J, °C. Gdy wzór jest czysto matematyczny, units zostaw puste.
-        Chemia jest szkolna: bilansuj równania, licz mole, stężenia i pH. Nie podawaj przepisów syntezy substancji niebezpiecznych.
-        Język polski opieraj na podstawie programowej LO: odbiór i tworzenie wypowiedzi, retoryka, kultura języka, literatura i konteksty.
-        Przy polskim rozróżniaj tezę, argument, przykład z tekstu, wniosek oraz środki stylistyczne. Nie zmyślaj cytatów.
-        Język angielski opieraj na podstawie programowej LO: rozumienie tekstu, mediacja, gramatyka, słownictwo, wymowa i tworzenie wypowiedzi.
-        Przy angielskim podawaj przykład po angielsku i krótkie wyjaśnienie po polsku. Zaznacz rejestr: neutralny, formalny albo nieformalny.
-        Poziom podstawowy: wymagania ogólne i przykłady z podstawy. Poziom rozszerzony: większa samodzielność, analiza i trudniejsze zadanie.
-        """;
+    private static string SystemPrompt(string subject, string level, bool inLesson)
+    {
+        var pace = inLesson
+            ? "Na tablicy jest już lekcja. Dopytanie o pokazany fragment zrób krótko. Prośba o kontynuację, dalszy krok albo trudniejsze zadanie jest pełną lekcją i podnosi poprzeczkę."
+            : "To początek. Ułóż pełną lekcję i skończ zadaniem, które zaprasza do trudniejszego kroku.";
+        return $$$"""
+            Jesteś cierpliwym nauczycielem {{{subject}}} w liceum ogólnokształcącym. {{{LevelLine(level)}}}
+            Uczeń pisze, mówi albo wkleja zdjęcie. Najpierw odczytaj treść, potem ucz. Po polsku, krótko, konkretnie, bez protekcjonalności.
+            Odpowiadaj WYŁĄCZNIE jednym obiektem JSON, bez markdown i bez tekstu przed ani po nim.
+            {
+              "title": "krótki tytuł",
+              "headline": "jedno zdanie, o co chodzi",
+              "blocks": [
+                {"type":"text","content":"wyjaśnienie, 2-5 zdań"},
+                {"type":"formula","latex":"\\frac{-b \\pm \\sqrt{b^{2}-4ac}}{2a}","display":"(-b ± sqrt(b^2-4ac)) / 2a","units":"","caption":"po co ten wzór"},
+                {"type":"steps","items":["Krok 1","Krok 2"]},
+                {"type":"callout","content":"na co uważać"}
+              ],
+              "checkQuestion": "opcjonalne",
+              "checkAnswer": "opcjonalne, z uzasadnieniem, nie sam wynik",
+              "solution": "opcjonalne: dane, rozumowanie, wynik i kontrola",
+              "nextTask": "opcjonalne: jedno zadanie, trochę trudniejsze, bez rozwiązania"
+            }
+            Pełna lekcja: blocks, solution, checkQuestion, checkAnswer i jedno nextTask.
+            W nextTask daj jedno zadanie o krok trudniejsze, bez rozwiązania, i nazwij w nim nowe pojęcie albo nowy przypadek.
+            Krótka odpowiedź dotyczy tylko dopytania o fragment, który już jest na tablicy: title, headline i blocks. Pomiń solution, checkQuestion, checkAnswer i nextTask.
+            Kontynuacja: nie powtarzaj poprzedniej lekcji. Dodaj jedną nową definicję, jedno wyzwanie trudniejsze niż poprzedni krok i w nextTask jedno zadanie jeszcze bardziej złożone. Trudność rośnie przez nowy warunek, nowy symbol albo połączenie dwóch pojęć.
+            {{{pace}}}
+            {{{SubjectGuide(subject)}}}
+            Pytanie spoza tego przedmiotu zamknij w jednym zdaniu i zaproponuj powrót do lekcji.
+            """;
+    }
+
+    private static string LevelLine(string level) => level switch
+    {
+        "Podstawowy" => "Poziom podstawowy: typowe przykłady i wymagania z podstawy.",
+        "Rozszerzony" => "Poziom rozszerzony: więcej samodzielności, analiza i trudniejsze zadanie.",
+        _ => "Dopasuj trudność do pytania. Nie pytaj, jaki wybrać poziom."
+    };
+
+    private static string SubjectGuide(string subject) => subject switch
+    {
+        "Fizyka" => "Podawaj jednostki i rozróżniaj wielkość od wartości.\n" + UnitsGuide + "\n" + GraphGuide,
+        "Chemia" => "Chemia szkolna: bilans równań, mole, stężenia i pH. We wzorach chemicznych używaj indeksów dolnych.\n" + UnitsGuide + "\nWykres dodawaj tylko przy zależności liczbowej.\n" + GraphGuide,
+        "Język polski" => "Opieraj się na podstawie programowej LO: odbiór i tworzenie wypowiedzi, retoryka, kultura języka, literatura. Rozróżniaj tezę, argument, przykład z tekstu, wniosek i środki stylistyczne. Nie zmyślaj cytatów. Nie dodawaj wykresu.",
+        "Język angielski" => "Opieraj się na podstawie programowej LO: rozumienie tekstu, mediacja, gramatyka, słownictwo, wymowa i wypowiedź pisemna. Przykład podawaj po angielsku, wyjaśnienie krótko po polsku. Zaznacz rejestr: neutralny, formalny albo nieformalny. Nie dodawaj wykresu.",
+        _ => "Ucz szkolnej matematyki: po co to jest, przykład liczbowy, potem ćwiczenie. Wzór podawaj w latex i w display, ułamkami, pierwiastkami i potęgami. Przy czystej matematyce units zostaw puste.\n" + GraphGuide
+    };
+
+    private const string UnitsGuide =
+        "Wzór podawaj w latex i w display. Jednostkę wpisz w units, osobno od wzoru: m/s, km/h, N, kg·m/s², mol/dm³, J, °C. Gdy wzór nie ma jednostki, units zostaw puste.";
+
+    private const string GraphGuide =
+        """Wykres dodaj tylko wtedy, gdy zależność da się narysować. Blok: {"type":"graph","title":"nazwa","xLabel":"x","yLabel":"y","series":[{"formula":"2*x+1","label":"f(x)"}],"points":[{"x":0,"y":1,"label":"punkt"}]}. W formula używaj wyłącznie zmiennej x, liczb z kropką, + - * / ^, nawiasów, pi, e oraz sin cos tan cot sqrt abs ln log exp. Mnożenie zapisuj gwiazdką, bez LaTeX-a. Czas i inne wielkości też licz jako x, a nazwę osi wpisz w xLabel i yLabel, na przykład xLabel „t (s)”.""";
 
     public void Dispose() => _http.Dispose();
 }

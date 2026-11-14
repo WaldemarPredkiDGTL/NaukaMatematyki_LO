@@ -8,9 +8,9 @@ internal sealed class MainForm : Form
     private readonly VoiceInput _voice = new();
     private readonly LessonBoard _board = new();
     private readonly TextBox _input = new();
-    private readonly TextBox _key = new();
-    private readonly ComboBox _model = new();
     private readonly ComboBox _level = new();
+    private string _apiKey = "";
+    private string _modelName = "grok-4";
     private readonly FlowLayoutPanel _topics = new();
     private readonly ListBox _history = new();
     private readonly Panel _thumbs = new();
@@ -32,7 +32,7 @@ internal sealed class MainForm : Form
 
     public MainForm()
     {
-        _voice.ApiKey = () => _key.Text;
+        _voice.ApiKey = () => _apiKey;
         Text = "Pracownia LO — przedmioty ścisłe i języki";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1100, 720);
@@ -45,6 +45,10 @@ internal sealed class MainForm : Form
         LoadState();
         Wire();
         ShowBoard(scrollEnd: false);
+        Shown += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(_apiKey)) ShowSettings();
+        };
     }
 
     private void BuildUi()
@@ -68,39 +72,18 @@ internal sealed class MainForm : Form
         };
         var subtitle = new Label
         {
-            Text = "Grok prowadzi lekcję. Ty pytasz tekstem, głosem albo zdjęciem.",
+            Text = "Pytasz tekstem, głosem albo zdjęciem. Grok układa lekcję na tablicy.",
             Font = Theme.Small,
             ForeColor = Theme.Muted,
             AutoSize = true,
             Location = new Point(54, 44)
         };
-        _key.UseSystemPasswordChar = true;
-        _key.PlaceholderText = "Klucz API xAI";
-        _key.Width = 220;
-        _key.Location = new Point(520, 22);
-        StyleField(_key);
-        _model.Width = 180;
-        _model.Location = new Point(752, 22);
-        _model.FlatStyle = FlatStyle.Flat;
-        _model.DropDownStyle = ComboBoxStyle.DropDown;
-        _model.Items.AddRange(["grok-4", "grok-4-fast", "grok-3", "grok-2-vision-1212"]);
-        StyleField(_model);
-        var keyLink = new LinkLabel
-        {
-            Text = "console.x.ai",
-            AutoSize = true,
-            LinkColor = Theme.Copper,
-            ActiveLinkColor = Theme.Chalk,
-            Location = new Point(944, 26)
-        };
-        keyLink.LinkClicked += (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://console.x.ai/") { UseShellExecute = true });
-        header.Controls.AddRange([mark, title, subtitle, _key, _model, keyLink]);
-        header.Resize += (_, _) =>
-        {
-            keyLink.Left = header.Width - keyLink.Width - 20;
-            _model.Left = keyLink.Left - _model.Width - 12;
-            _key.Left = _model.Left - _key.Width - 12;
-        };
+        var settings = MakeButton("Ustawienia");
+        settings.Height = 34;
+        settings.Location = new Point(1180, 20);
+        header.Controls.AddRange([mark, title, subtitle, settings]);
+        header.Resize += (_, _) => settings.Left = Math.Max(360, header.ClientSize.Width - settings.Width - 20);
+        settings.Click += (_, _) => ShowSettings();
 
         var sidebar = new Panel { Dock = DockStyle.Left, Width = 336, BackColor = Theme.Sidebar, Padding = new Padding(14) };
         _math.Text = "Matematyka";
@@ -151,7 +134,7 @@ internal sealed class MainForm : Form
             LayoutSubjects(sidebar.Width);
         };
 
-        var composer = new Panel { Dock = DockStyle.Bottom, Height = 200, BackColor = Theme.Sidebar, Padding = new Padding(16, 8, 16, 12) };
+        var composer = new Panel { Dock = DockStyle.Bottom, Height = 176, BackColor = Theme.Sidebar, Padding = new Padding(16, 8, 16, 12) };
         _thumbs.Dock = DockStyle.Top;
         _thumbs.Height = 0;
         _thumbs.BackColor = Theme.Sidebar;
@@ -159,12 +142,12 @@ internal sealed class MainForm : Form
         _input.Multiline = true;
         _input.ScrollBars = ScrollBars.Vertical;
         _input.BorderStyle = BorderStyle.FixedSingle;
-        _input.PlaceholderText = "Zapytaj o zadanie, wzór albo wykres. Ctrl+Enter wysyła, Ctrl+V wkleja obraz.";
+        _input.PlaceholderText = "Zapytaj o zadanie. Ctrl+Enter wysyła, Ctrl+V wkleja obraz. Miniaturę kliknij, aby ją usunąć.";
         StyleField(_input);
         var buttons = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 78,
+            Height = 48,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true,
             BackColor = Theme.Sidebar,
@@ -173,11 +156,10 @@ internal sealed class MainForm : Form
         _mic.Text = "Mów";
         var paste = MakeButton("Wklej obraz");
         var file = MakeButton("Z pliku");
-        var clear = MakeButton("Wyczyść");
-        var reset = MakeButton("Wyzeruj");
         var sample = MakeButton("Przykład");
         var fresh = MakeButton("Nowa lekcja");
         var save = MakeButton("Zapisz tablicę");
+        var next = MakeButton("Kontynuuj");
         _send.Text = "Wyślij";
         StyleChoice(_send);
         _send.BackColor = Theme.Copper;
@@ -186,7 +168,7 @@ internal sealed class MainForm : Form
         _send.Height = 34;
         StyleChoice(_mic);
         _mic.Width = 84;
-        buttons.Controls.AddRange([_mic, paste, file, clear, reset, sample, fresh, save, _send]);
+        buttons.Controls.AddRange([_mic, paste, file, fresh, sample, save, next, _send]);
         _status.Dock = DockStyle.Bottom;
         _status.Height = 22;
         _status.ForeColor = Theme.Muted;
@@ -205,11 +187,10 @@ internal sealed class MainForm : Form
 
         paste.Click += (_, _) => PasteImage();
         file.Click += (_, _) => PickImage();
-        clear.Click += (_, _) => { _input.Clear(); ClearImages(); };
-        reset.Click += (_, _) => ResetBoard();
         sample.Click += (_, _) => ShowSample();
         fresh.Click += (_, _) => StartFresh();
         save.Click += (_, _) => SaveBoard();
+        next.Click += async (_, _) => await ContinueAsync();
         _send.Click += async (_, _) => await SendAsync();
         _mic.Click += (_, _) => ToggleMic();
         _math.Click += (_, _) => SetSubject("Matematyka");
@@ -243,21 +224,21 @@ internal sealed class MainForm : Form
     private void LoadState()
     {
         _settings = SettingsStore.Load();
-        _model.Text = string.IsNullOrWhiteSpace(_settings.Model) ? "grok-4" : _settings.Model;
+        _modelName = string.IsNullOrWhiteSpace(_settings.Model) ? "grok-4" : _settings.Model;
         _level.SelectedItem = _settings.Level;
         if (_level.SelectedIndex < 0) _level.SelectedIndex = 1;
-        try { _key.Text = SettingsStore.Unprotect(_settings.ProtectedKey); }
+        try { _apiKey = SettingsStore.Unprotect(_settings.ProtectedKey); }
         catch (Exception ex)
         {
             AppLog.Error("Ustawienia", ex);
-            _key.Text = "";
+            _apiKey = "";
         }
         _historyItems.AddRange(SettingsStore.LoadHistory());
         BindHistory();
         SetSubject(string.IsNullOrWhiteSpace(_settings.Subject) ? "Matematyka" : _settings.Subject);
-        _status.Text = string.IsNullOrWhiteSpace(_key.Text)
-            ? "Wpisz klucz z console.x.ai — bez niego Grok nie odpowie."
-            : "Klucz odczytany lokalnie. Możesz pytać.";
+        _status.Text = string.IsNullOrWhiteSpace(_apiKey)
+            ? "Otwórz Ustawienia i wklej klucz z console.x.ai."
+            : "Możesz pytać.";
     }
 
     private void LayoutSubjects(int sidebarWidth)
@@ -299,10 +280,11 @@ internal sealed class MainForm : Form
             button.Height = 32;
             button.Margin = new Padding(0, 0, 0, 6);
             button.TextAlign = ContentAlignment.MiddleLeft;
-            button.Click += async (_, _) =>
+            button.Click += (_, _) =>
             {
                 _input.Text = prompt;
-                await SendAsync();
+                _input.Focus();
+                _status.Text = "Temat wstawiony. Możesz go zmienić i wysłać.";
             };
             _topics.Controls.Add(button);
         }
@@ -352,15 +334,6 @@ internal sealed class MainForm : Form
 
     private void StartFresh()
     {
-        _session.Clear();
-        _input.Clear();
-        ClearImages();
-        ShowBoard(scrollEnd: false);
-        _status.Text = "Nowa lekcja. Poprzednie zostają na liście z lewej.";
-    }
-
-    private void ResetBoard()
-    {
         if (_busy)
         {
             _status.Text = "Poczekaj, aż Grok skończy, albo naciśnij Stop.";
@@ -371,11 +344,30 @@ internal sealed class MainForm : Form
         _session.Clear();
         _input.Clear();
         ClearImages();
-        _board.Show([], includeWelcome: false);
-        _status.Text = "Tablica wyczyszczona. Poprzednie lekcje zostają na liście z lewej.";
+        ShowBoard(scrollEnd: false);
+        _status.Text = "Nowa lekcja. Poprzednie zostają na liście z lewej.";
     }
 
-    private async Task SendAsync()
+    private async Task ContinueAsync()
+    {
+        if (_busy)
+        {
+            _status.Text = "Poczekaj, aż Grok skończy, albo naciśnij Stop.";
+            return;
+        }
+
+        if (!_session.Any(turn => turn.Lesson is not null && !string.IsNullOrWhiteSpace(turn.RawLesson)))
+        {
+            _status.Text = "Najpierw poproś o lekcję. Kontynuuj dokłada nową definicję i trudniejsze zadanie.";
+            return;
+        }
+
+        await SendAsync(
+            "Kontynuuj tę samą lekcję o jeden krok dalej. Nie powtarzaj poprzednich wyjaśnień. Wprowadź jedną nową definicję, która wynika z tego, co już jest na tablicy. Potem daj jedno wyzwanie trudniejsze niż poprzednie, z pełnym rozwiązaniem. Na końcu daj jedno zadanie do samodzielnej pracy, jeszcze o krok bardziej złożone, bez gotowego wyniku.",
+            "Kontynuuj — kolejny, trudniejszy krok");
+    }
+
+    private async Task SendAsync(string? questionOverride = null, string? shownQuestion = null)
     {
         if (_busy)
         {
@@ -383,21 +375,22 @@ internal sealed class MainForm : Form
             return;
         }
 
-        var key = _key.Text.Trim();
+        var key = _apiKey.Trim();
         if (string.IsNullOrEmpty(key))
         {
-            _status.Text = "Najpierw wpisz klucz API xAI.";
-            _key.Focus();
+            _status.Text = "Najpierw wklej klucz API.";
+            ShowSettings();
             return;
         }
 
-        var question = _input.Text.Trim();
-        if (question.Length == 0 && _images.Count == 0) return;
+        var typed = questionOverride is null;
+        var question = questionOverride ?? _input.Text.Trim();
+        if (typed && question.Length == 0 && _images.Count == 0) return;
         if (question.Length == 0) question = "Odczytaj zadanie z obrazka i wytłumacz je jak na lekcji w liceum.";
 
         RememberSettings(key);
-        var images = _images.Select(item => item.Png).ToList();
-        var thumbs = _images.Select(item => (Image)item.Thumb).ToList();
+        var images = typed ? _images.Select(item => item.Png).ToList() : [];
+        var thumbs = typed ? _images.Select(item => (Image)item.Thumb).ToList() : [];
         var history = _session
             .Where(turn => turn.Lesson is not null && !string.IsNullOrWhiteSpace(turn.RawLesson))
             .SelectMany(turn => new[] { ("user", turn.Question), ("assistant", turn.Lesson!.ToContextText()) })
@@ -409,11 +402,11 @@ internal sealed class MainForm : Form
         _cts = new CancellationTokenSource();
         try
         {
-            var raw = await _teacher.AskAsync(key, _model.Text, _settings.Subject, _level.Text, history, question, images, _cts.Token);
+            var raw = await _teacher.AskAsync(key, _modelName, _settings.Subject, _level.Text, history, question, images, _cts.Token);
             var lesson = LessonDocument.Parse(raw);
             var turn = new StudyTurn
             {
-                Question = question,
+                Question = shownQuestion ?? question,
                 Subject = _settings.Subject,
                 Level = _level.Text,
                 At = DateTime.Now,
@@ -425,12 +418,16 @@ internal sealed class MainForm : Form
             _historyItems.Add(turn);
             SettingsStore.SaveHistory(_historyItems);
             BindHistory();
-            _input.Clear();
-            ClearImages(keepThumbs: true);
+            if (typed)
+            {
+                _input.Clear();
+                ClearImages(keepThumbs: true);
+            }
             ShowBoard(scrollEnd: true);
-            _status.Text = lesson.Blocks.Any(block => block.Type == "graph")
+            var ready = lesson.Blocks.Any(block => block.Type == "graph")
                 ? "Lekcja gotowa, z wykresem."
                 : "Lekcja gotowa.";
+            _status.Text = ready + " Kontynuuj dokłada nową definicję i trudniejsze zadanie.";
         }
         catch (OperationCanceledException)
         {
@@ -452,7 +449,7 @@ internal sealed class MainForm : Form
 
     private void RememberSettings(string key)
     {
-        _settings.Model = string.IsNullOrWhiteSpace(_model.Text) ? "grok-4" : _model.Text.Trim();
+        _settings.Model = string.IsNullOrWhiteSpace(_modelName) ? "grok-4" : _modelName.Trim();
         _settings.Level = _level.Text;
         _settings.ProtectedKey = SettingsStore.Protect(key);
         SettingsStore.Save(_settings);
@@ -461,15 +458,15 @@ internal sealed class MainForm : Form
     private async Task InsertSpokenTextAsync(string text)
     {
         var corrected = CleanTranscript(text);
-        if (!string.IsNullOrWhiteSpace(_key.Text))
+        if (!string.IsNullOrWhiteSpace(_apiKey))
         {
             _status.Text = "Grok poprawia rozpoznany tekst…";
             try
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
                 var polished = await _teacher.PolishSpeechAsync(
-                    _key.Text,
-                    _model.Text,
+                    _apiKey,
+                    _modelName,
                     string.IsNullOrWhiteSpace(_settings.Subject) ? "Matematyka" : _settings.Subject,
                     corrected,
                     cts.Token);
@@ -585,14 +582,17 @@ internal sealed class MainForm : Form
         using var stream = new MemoryStream();
         fitted.Save(stream, ImageFormat.Png);
         var thumb = Fit(fitted, 92);
-        _images.Add(new AttachedImage(fitted, thumb, stream.ToArray()));
+        var attached = new AttachedImage(fitted, thumb, stream.ToArray());
+        _images.Add(attached);
         var box = new PictureBox
         {
             Image = thumb,
             SizeMode = PictureBoxSizeMode.Zoom,
             Size = new Size(72, 48),
-            Margin = new Padding(0, 0, 8, 0)
+            Margin = new Padding(0, 0, 8, 0),
+            Cursor = Cursors.Hand
         };
+        box.Click += (_, _) => RemoveImage(attached);
         if (_thumbs.Controls.Count == 0)
         {
             _thumbs.Height = 56;
@@ -605,7 +605,7 @@ internal sealed class MainForm : Form
         {
             row.Controls.Add(box);
         }
-        _status.Text = "Obraz dołączony. Grok odczyta zadanie razem z pytaniem.";
+        _status.Text = "Obraz dołączony. Kliknij miniaturę, aby ją usunąć.";
     }
 
     private void ClearImages(bool keepThumbs = false)
@@ -625,6 +625,122 @@ internal sealed class MainForm : Form
         }
         _thumbs.Tag = null;
         _thumbs.Height = 0;
+    }
+
+    private void RemoveImage(AttachedImage image)
+    {
+        var index = _images.IndexOf(image);
+        if (index < 0) return;
+        _images.RemoveAt(index);
+        if (_thumbs.Tag is FlowLayoutPanel row && index < row.Controls.Count)
+        {
+            var child = row.Controls[index];
+            row.Controls.Remove(child);
+            if (child is PictureBox box) box.Image = null;
+            child.Dispose();
+        }
+        image.Full.Dispose();
+        image.Thumb.Dispose();
+        if (_images.Count == 0)
+        {
+            while (_thumbs.Controls.Count > 0)
+            {
+                var child = _thumbs.Controls[0];
+                _thumbs.Controls.Remove(child);
+                child.Dispose();
+            }
+            _thumbs.Tag = null;
+            _thumbs.Height = 0;
+        }
+        _status.Text = "Obraz usunięty.";
+    }
+
+    private void ShowSettings()
+    {
+        using var dialog = new Form
+        {
+            Text = "Ustawienia",
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            ShowInTaskbar = false,
+            ClientSize = new Size(440, 230),
+            BackColor = Theme.Sidebar,
+            Font = Theme.Body
+        };
+        var hint = new Label
+        {
+            Text = "Klucz zostaje na tym koncie Windows.",
+            ForeColor = Theme.Muted,
+            Font = Theme.Small,
+            AutoSize = true,
+            Location = new Point(20, 16)
+        };
+        var keyLabel = new Label
+        {
+            Text = "KLUCZ API",
+            ForeColor = Theme.Muted,
+            Font = Theme.TinyBold,
+            AutoSize = true,
+            Location = new Point(20, 48)
+        };
+        var key = new TextBox
+        {
+            UseSystemPasswordChar = true,
+            PlaceholderText = "Klucz API xAI",
+            Text = _apiKey,
+            Location = new Point(20, 70),
+            Width = 400
+        };
+        StyleField(key);
+        var modelLabel = new Label
+        {
+            Text = "MODEL",
+            ForeColor = Theme.Muted,
+            Font = Theme.TinyBold,
+            AutoSize = true,
+            Location = new Point(20, 108)
+        };
+        var model = new ComboBox
+        {
+            Width = 400,
+            Location = new Point(20, 130),
+            FlatStyle = FlatStyle.Flat,
+            DropDownStyle = ComboBoxStyle.DropDown,
+            Text = _modelName
+        };
+        model.Items.AddRange(["grok-4", "grok-4-fast", "grok-3", "grok-2-vision-1212"]);
+        StyleField(model);
+        var link = new LinkLabel
+        {
+            Text = "Klucz pobierzesz na console.x.ai",
+            AutoSize = true,
+            LinkColor = Theme.Copper,
+            ActiveLinkColor = Theme.Chalk,
+            Location = new Point(20, 168)
+        };
+        link.LinkClicked += (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://console.x.ai/") { UseShellExecute = true });
+        var save = new Button
+        {
+            Text = "Zapisz",
+            DialogResult = DialogResult.OK,
+            Location = new Point(300, 188),
+            Width = 120,
+            Height = 34
+        };
+        StyleChoice(save);
+        save.BackColor = Theme.Copper;
+        save.ForeColor = Color.White;
+        dialog.AcceptButton = save;
+        dialog.Controls.AddRange([hint, keyLabel, key, modelLabel, model, link, save]);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        _apiKey = key.Text.Trim();
+        _modelName = string.IsNullOrWhiteSpace(model.Text) ? "grok-4" : model.Text.Trim();
+        RememberSettings(_apiKey);
+        _status.Text = string.IsNullOrWhiteSpace(_apiKey)
+            ? "Bez klucza API Grok nie odpowie. Otwórz Ustawienia."
+            : "Ustawienia zapisane. Możesz pytać.";
     }
 
     private string ExportFileName()
@@ -724,11 +840,11 @@ internal sealed class MainForm : Form
 
     private static readonly (string Label, string Prompt)[] PhysicsTopics =
     [
-        ("Ruch przyspieszony", "Ruch jednostajnie przyspieszony: s(t)=5t+2t^2. Narysuj zależność od czasu i policz prędkość po 3 s. We wzorze wykresu użyj x zamiast t."),
+        ("Ruch przyspieszony", "Ruch jednostajnie przyspieszony: droga s(t) = 5t + 2t². Narysuj zależność drogi od czasu i policz prędkość po 3 s."),
         ("II zasada dynamiki", "Wytłumacz drugą zasadę dynamiki na klocku o masie 3 kg, na który działa siła 12 N."),
         ("Energia", "Ciało 2 kg spada z 10 m. Pokaż, jak energia potencjalna zamienia się w kinetyczną."),
         ("Obwód", "Szeregowo R1=4 ohm i R2=6 ohm, U=12 V. Policz prąd i spadki napięć."),
-        ("Drgania", "x(t)=0.1*sin(2*pi*t). Wykres, amplituda i okres. We wzorze wykresu użyj x jako czasu."),
+        ("Drgania", "Wahadło wychyla się o 0,1·sin(2πt) metra. Pokaż wykres, amplitudę i okres."),
         ("Soczewka", "Soczewka skupiająca: f=10 cm, przedmiot w odległości 30 cm. Policz obraz i powiększenie.")
     ];
 
@@ -737,10 +853,10 @@ internal sealed class MainForm : Form
         ("Mol", "Wytłumacz mol i masę molową na przykładzie 18 g wody. Policz liczbę moli i cząsteczek."),
         ("Stechiometria", "Ile gramów CO2 powstanie ze spalenia 16 g metanu? Ułóż równanie i policz z moli."),
         ("Stężenie", "W 200 cm3 roztworu jest 0,1 mola NaCl. Policz stężenie molowe i procentowe, jeśli gęstość to 1,02 g/cm3."),
-        ("pH", "Oblicz pH roztworu, w którym [H+] = 0,001 mol/dm3. Narysuj zależność pH od x, gdzie x to wykładnik: pH = -log(10^(-x)) dla x od 1 do 6."),
+        ("pH", "Oblicz pH roztworu, w którym [H+] = 0,001 mol/dm³. Pokaż, jak pH zmienia się, gdy stężenie jonów wodorowych maleje."),
         ("Równanie reakcji", "Zbilansuj spalanie etanolu i wytłumacz, co znaczą współczynniki stechiometryczne."),
         ("Wiązania", "Porównaj wiązanie jonowe, kowalencyjne i metaliczne na przykładach NaCl, H2O i miedzi."),
-        ("Szybkość reakcji", "Stężenie substratu maleje jak c(t)=2*exp(-0.3*x). We wzorze wykresu użyj x jako czasu. Odczytaj stężenie po 4 jednostkach czasu."),
+        ("Szybkość reakcji", "Stężenie substratu maleje według c(t) = 2e^(−0,3t). Pokaż wykres i odczytaj stężenie po 4 jednostkach czasu."),
         ("Termochemia", "Reakcja ma ΔH = -286 kJ/mol. Wytłumacz, czy jest egzo- czy endotermiczna i co to znaczy dla ciepła.")
     ];
 

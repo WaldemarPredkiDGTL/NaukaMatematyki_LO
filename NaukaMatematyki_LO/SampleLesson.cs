@@ -2,10 +2,24 @@ namespace NaukaMatematyki_LO;
 
 internal static class SampleLesson
 {
+    public static LessonDocument Welcome() => new()
+    {
+        Title = "O co chcesz zapytać?",
+        Headline = "Wybierz przedmiot albo wpisz zadanie. Temat z lewej tylko wstawia pytanie.",
+        Blocks =
+        [
+            new LessonBlock
+            {
+                Type = "text",
+                Content = "Pisz, mów albo wklej zdjęcie zadania. Nowe zadanie układa się jako lekcja. Kontynuuj dokłada nową definicję i trudniejsze zadanie. Klucz API jest w Ustawieniach."
+            }
+        ]
+    };
+
     public static LessonDocument Create() => new()
     {
-        Title = "Tablica jest gotowa",
-        Headline = "Wpisz klucz xAI, a Grok poprowadzi lekcję. Na start — funkcja kwadratowa, tak jak na sprawdzianie.",
+        Title = "Funkcja kwadratowa",
+        Headline = "Tak wygląda lekcja na tablicy: miejsca zerowe i wierzchołek.",
         CheckQuestion = "Ile miejsc zerowych ma f(x) = x² − 4x + 3?",
         CheckAnswer = "Dwa: x = 1 i x = 3. Delta wynosi 4, więc parabola przecina oś OX w dwóch punktach.",
         Blocks =
@@ -13,7 +27,7 @@ internal static class SampleLesson
             new LessonBlock
             {
                 Type = "text",
-                Content = "Możesz zapytać tekstem, użyć mikrofonu albo wkleić zdjęcie zadania. Odpowiedź ułożę jako lekcję: cel, wyjaśnienie, przykład, opis rozwiązania i następne zadanie. Z lewej wybierasz matematykę, fizykę, chemię, język polski albo angielski."
+                Content = "Funkcja kwadratowa rysuje parabolę. Miejsca zerowe znajdujesz ze wzoru z deltą, a wierzchołek leży pośrodku między nimi."
             },
             new LessonBlock
             {
@@ -56,7 +70,7 @@ internal static class SampleLesson
             new LessonBlock
             {
                 Type = "callout",
-                Content = "Klucz API zostaje tylko na tym koncie Windows, zaszyfrowany. Do zdjęć zadań wybierz model Groka, który widzi obrazy."
+                Content = "Najpierw delta. Miejsca zerowe liczymy dopiero, gdy delta nie jest ujemna."
             }
         ]
     };

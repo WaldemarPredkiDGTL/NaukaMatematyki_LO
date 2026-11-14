@@ -24,7 +24,7 @@ internal sealed class LessonBoard : Panel
         _cards.Clear();
         Controls.Clear();
         if (includeWelcome && turns.Count == 0)
-            AddDocument(null, SampleLesson.Create());
+            AddDocument(null, SampleLesson.Welcome());
         foreach (var turn in turns)
         {
             if (turn.Lesson is null) continue;
@@ -111,6 +111,8 @@ internal sealed class LessonBoard : Panel
     {
         if (_layingOut || _cards.Count == 0) return;
         _layingOut = true;
+        var scrollY = ScrollOffset();
+        ScrollTo(0);
         var width = Math.Max(320, ClientSize.Width - 28);
         var y = 16;
         foreach (var card in _cards)
@@ -121,15 +123,48 @@ internal sealed class LessonBoard : Panel
         }
         _contentHeight = y;
         AutoScrollMinSize = new Size(0, y + 8);
+        ScrollTo(scrollY);
         _layingOut = false;
     }
 
-    public void ScrollToEnd()
-    {
-        AutoScrollPosition = new Point(0, Math.Max(0, _contentHeight));
-    }
+    public void ScrollToEnd() => ScrollTo(int.MaxValue);
 
     public void Relayout() => LayoutCards();
+
+    public void Reveal(Control card, Control anchor)
+    {
+        var button = RectangleToClient(anchor.RectangleToScreen(anchor.ClientRectangle));
+        var bounds = RectangleToClient(card.RectangleToScreen(card.ClientRectangle));
+        var overflow = bounds.Bottom - ClientSize.Height + 12;
+        if (overflow <= 0) return;
+        var room = Math.Max(0, button.Y - 16);
+        ScrollTo(ScrollOffset() + Math.Min(overflow, room));
+    }
+
+    private int MaxScroll() => Math.Max(0, Math.Max(_contentHeight, AutoScrollMinSize.Height) - ClientSize.Height);
+
+    private int ScrollOffset() => -AutoScrollPosition.Y;
+
+    private void ScrollTo(int y)
+    {
+        if (!IsHandleCreated) return;
+        var target = Math.Clamp(y, 0, MaxScroll());
+        if (ScrollOffset() == target) return;
+        SetDisplayRectLocation(0, -target);
+        if (ScrollOffset() != target)
+            AutoScrollPosition = new Point(0, target);
+    }
+
+    protected override Point ScrollToControl(Control activeControl) => DisplayRectangle.Location;
+}
+
+internal sealed class QuietButton : Button
+{
+    public QuietButton()
+    {
+        SetStyle(ControlStyles.Selectable, false);
+        TabStop = false;
+    }
 }
 
 internal abstract class LessonCard : Panel
@@ -430,7 +465,7 @@ internal sealed class CheckCard : LessonCard
     {
         _question = question;
         _answer = answer;
-        _reveal = new Button
+        _reveal = new QuietButton
         {
             Text = "Pokaż odpowiedź",
             FlatStyle = FlatStyle.Flat,
@@ -438,15 +473,18 @@ internal sealed class CheckCard : LessonCard
             ForeColor = Color.White,
             Font = Theme.SmallBold,
             Cursor = Cursors.Hand,
-            Size = new Size(150, 30)
+            Size = new Size(170, 30)
         };
         _reveal.FlatAppearance.BorderSize = 0;
         _reveal.Click += (_, _) =>
         {
             _open = !_open;
             _reveal.Text = _open ? "Ukryj" : "Pokaż odpowiedź";
-            Reflow(Width);
-            if (Parent is LessonBoard board) board.Relayout();
+            if (Parent is LessonBoard board)
+            {
+                board.Relayout();
+                if (_open) board.Reveal(this, _reveal);
+            }
             Invalidate();
         };
         Controls.Add(_reveal);
