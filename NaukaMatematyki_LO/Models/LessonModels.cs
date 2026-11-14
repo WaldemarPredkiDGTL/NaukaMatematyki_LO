@@ -270,6 +270,7 @@ internal sealed class StudyTurn
     public string Level { get; set; } = "";
     public DateTime At { get; set; } = DateTime.Now;
     public string RawLesson { get; set; } = "";
+    public bool Prepared { get; set; }
     public LessonDocument? Lesson { get; set; }
     public List<Image>? Images { get; set; }
 }

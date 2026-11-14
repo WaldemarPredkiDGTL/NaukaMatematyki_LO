@@ -63,6 +63,7 @@ internal static class SettingsStore
                 Level = item.Level,
                 At = item.At,
                 RawLesson = item.RawLesson,
+                Prepared = item.Prepared,
                 Lesson = LessonDocument.Parse(item.RawLesson)
             }).ToList();
         }
@@ -80,10 +81,37 @@ internal static class SettingsStore
             Subject = turn.Subject,
             Level = turn.Level,
             At = turn.At,
-            RawLesson = turn.RawLesson
+            RawLesson = turn.RawLesson,
+            Prepared = turn.Prepared
         }).ToList();
         Directory.CreateDirectory(Dir);
         File.WriteAllText(HistoryPath, JsonSerializer.Serialize(stored, Json));
+    }
+
+    public static StudyPlan? LoadPlan()
+    {
+        try
+        {
+            var path = Path.Combine(Dir, "plan.json");
+            if (!File.Exists(path)) return null;
+            return StudyPlan.Parse(File.ReadAllText(path));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    public static void SavePlan(StudyPlan? plan)
+    {
+        var path = Path.Combine(Dir, "plan.json");
+        if (plan is null)
+        {
+            if (File.Exists(path)) File.Delete(path);
+            return;
+        }
+        Directory.CreateDirectory(Dir);
+        File.WriteAllText(path, plan.ToJson());
     }
 
     private static byte[] ProtectBytes(byte[] data)
@@ -154,5 +182,6 @@ internal static class SettingsStore
         public string Level { get; set; } = "";
         public DateTime At { get; set; }
         public string RawLesson { get; set; } = "";
+        public bool Prepared { get; set; }
     }
 }

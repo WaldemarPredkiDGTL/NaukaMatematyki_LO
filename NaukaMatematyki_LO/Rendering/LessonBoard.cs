@@ -17,19 +17,23 @@ internal sealed class LessonBoard : Panel
         Resize += (_, _) => LayoutCards();
     }
 
-    public void Show(IReadOnlyList<StudyTurn> turns, bool includeWelcome)
+    public void Show(IReadOnlyList<StudyTurn> turns, bool includeWelcome, StudyPlan? plan = null, string? working = null)
     {
         SuspendLayout();
         foreach (var card in _cards) card.Dispose();
         _cards.Clear();
         Controls.Clear();
-        if (includeWelcome && turns.Count == 0)
+        if (plan is { Items.Count: > 0 } && turns.Count == 0)
+            Add(new PlanCard(plan));
+        else if (includeWelcome && turns.Count == 0)
             AddDocument(null, SampleLesson.Welcome());
         foreach (var turn in turns)
         {
             if (turn.Lesson is null) continue;
             AddDocument(turn, turn.Lesson);
         }
+        if (!string.IsNullOrWhiteSpace(working))
+            Add(new WorkingCard(working));
         ResumeLayout();
         LayoutCards();
         ScrollToEnd();
@@ -241,6 +245,91 @@ internal abstract class LessonCard : Panel
         path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
         path.CloseFigure();
         return path;
+    }
+}
+
+internal sealed class PlanCard(StudyPlan plan) : LessonCard
+{
+    public override void Reflow(int width)
+    {
+        var inner = Math.Max(80, width - 40);
+        var height = 18 + 20 + 40;
+        if (!string.IsNullOrWhiteSpace(plan.Author)) height += 24;
+        if (!string.IsNullOrWhiteSpace(plan.Note)) height += 10 + TextHeight(plan.Note, Theme.Body, inner);
+        foreach (var item in plan.Items)
+        {
+            height += 14 + 22 + TextHeight(item.Prompt, Theme.Body, inner);
+            if (item.HasLesson) height += 18;
+        }
+        Height = height + 18;
+    }
+
+    protected override void PaintCard(Graphics graphics)
+    {
+        var bounds = new Rectangle(0, 0, Width - 1, Height - 1);
+        FillRound(graphics, bounds, 14, Theme.Paper);
+        var inner = Math.Max(80, Width - 40);
+        var y = 16;
+        var kicker = string.Join("  ·  ", new[] { plan.Subject, plan.Level }.Where(part => !string.IsNullOrWhiteSpace(part)));
+        TextRenderer.DrawText(graphics, "PRZESŁANY PLAN", Theme.TinyBold, new Rectangle(20, y, inner, 16), Theme.Copper, TextFormatFlags.Left);
+        y += 18;
+        if (kicker.Length > 0)
+        {
+            TextRenderer.DrawText(graphics, kicker.ToUpperInvariant(), Theme.TinyBold, new Rectangle(20, y, inner, 16), Theme.Muted, TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+            y += 20;
+        }
+        TextRenderer.DrawText(graphics, plan.Title, Theme.Title, new Rectangle(20, y, inner, 36), Theme.InkText, TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter);
+        y += 40;
+        if (!string.IsNullOrWhiteSpace(plan.Author))
+        {
+            TextRenderer.DrawText(graphics, "Ułożył " + plan.Author, Theme.Small, new Rectangle(20, y, inner, 20), Theme.Muted, TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+            y += 24;
+        }
+        if (!string.IsNullOrWhiteSpace(plan.Note))
+        {
+            var noteHeight = TextHeight(plan.Note, Theme.Body, inner);
+            TextRenderer.DrawText(graphics, plan.Note, Theme.Body, new Rectangle(20, y, inner, noteHeight), Theme.InkText, TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
+            y += noteHeight + 10;
+        }
+        var number = 1;
+        foreach (var item in plan.Items)
+        {
+            TextRenderer.DrawText(graphics, number + ".  " + item.Title, Theme.BodyBold, new Rectangle(20, y, inner, 22), Theme.InkText, TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+            y += 24;
+            var promptHeight = TextHeight(item.Prompt, Theme.Body, inner);
+            TextRenderer.DrawText(graphics, item.Prompt, Theme.Body, new Rectangle(20, y, inner, promptHeight), Theme.InkText, TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
+            y += promptHeight + 4;
+            if (item.HasLesson)
+            {
+                TextRenderer.DrawText(graphics, "Lekcja przygotowana", Theme.TinyBold, new Rectangle(20, y, inner, 16), Theme.Copper, TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+                y += 18;
+            }
+            y += 8;
+            number++;
+        }
+    }
+}
+
+internal sealed class WorkingCard(string detail) : LessonCard
+{
+    public override void Reflow(int width)
+    {
+        var inner = Math.Max(80, width - 40);
+        Height = 78 + TextHeight(detail, Theme.Body, inner);
+    }
+
+    protected override void PaintCard(Graphics graphics)
+    {
+        var bounds = new Rectangle(0, 0, Width - 1, Height - 1);
+        FillRound(graphics, bounds, 14, Theme.Formula);
+        using var pen = new Pen(Theme.Copper, 2f);
+        using var path = Round(new Rectangle(1, 1, Width - 3, Height - 3), 14);
+        graphics.DrawPath(pen, path);
+        var inner = Math.Max(80, Width - 40);
+        TextRenderer.DrawText(graphics, "GROK OPRACOWUJE LEKCJĘ", Theme.TinyBold, new Rectangle(20, 14, inner, 16), Theme.Copper, TextFormatFlags.Left);
+        TextRenderer.DrawText(graphics, "To zwykle trwa minutę albo dwie. Nie zamykaj programu. Stop przerywa.", Theme.Small, new Rectangle(20, 34, inner, 36), Theme.Chalk, TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
+        var bodyHeight = TextHeight(detail, Theme.Body, inner);
+        TextRenderer.DrawText(graphics, detail, Theme.Body, new Rectangle(20, 74, inner, bodyHeight), Theme.Chalk, TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
     }
 }
 

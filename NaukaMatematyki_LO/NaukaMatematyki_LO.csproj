@@ -9,11 +9,16 @@
     <Product>Pracownia LO</Product>
     <AssemblyTitle>Pracownia LO — przedmioty ścisłe i języki</AssemblyTitle>
     <Version>1.0.0</Version>
+    <ApplicationIcon>PracowniaLO.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="NAudio" Version="3.3.0" />
     <PackageReference Include="Velopack" Version="1.2.161" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="PracowniaLO.ico" LogicalName="NaukaMatematyki_LO.PracowniaLO.ico" />
   </ItemGroup>
 
 </Project>

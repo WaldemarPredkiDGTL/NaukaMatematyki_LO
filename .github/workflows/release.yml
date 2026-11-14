@@ -60,7 +60,7 @@ jobs:
           # Pierwsze wydanie nie ma poprzedniej paczki, więc brak delty jest w porządku.
           vpk download github --repoUrl "https://github.com/${{ github.repository }}" --token "${{ secrets.GITHUB_TOKEN }}"
 
-          vpk pack -u DGTL.PracowniaLO -v "${{ steps.version.outputs.version }}" -p publish --mainExe NaukaMatematyki_LO.exe --packTitle "Pracownia LO"
+          vpk pack -u DGTL.PracowniaLO -v "${{ steps.version.outputs.version }}" -p publish --mainExe NaukaMatematyki_LO.exe --packTitle "Pracownia LO" --icon NaukaMatematyki_LO/PracowniaLO.ico
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           vpk upload github --repoUrl "https://github.com/${{ github.repository }}" --token "${{ secrets.GITHUB_TOKEN }}" --publish --releaseName "Pracownia LO ${{ steps.version.outputs.version }}" --tag "v${{ steps.version.outputs.version }}"

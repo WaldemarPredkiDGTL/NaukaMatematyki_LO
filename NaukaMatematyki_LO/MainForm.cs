@@ -15,6 +15,7 @@ internal sealed class MainForm : Form
     private readonly ListBox _history = new();
     private readonly Panel _thumbs = new();
     private readonly Label _status = new();
+    private readonly Label _topicLabel = new();
     private readonly Button _send = new();
     private readonly Button _mic = new();
     private readonly Button _math = new();
@@ -26,13 +27,18 @@ internal sealed class MainForm : Form
     private readonly List<StudyTurn> _historyItems = [];
     private readonly List<StudyTurn> _session = [];
     private UserSettings _settings = new();
+    private StudyPlan? _activePlan;
     private CancellationTokenSource? _cts;
     private bool _busy;
     private bool _historyLoading;
+    private string? _working;
+    private MemoryStream? _iconSource;
+    private Icon? _appIcon;
 
     public MainForm()
     {
         _voice.ApiKey = () => _apiKey;
+        UseAppIcon();
         var appVersion = typeof(MainForm).Assembly.GetName().Version;
         Text = appVersion == null
             ? "Pracownia LO — przedmioty ścisłe i języki"
@@ -82,11 +88,20 @@ internal sealed class MainForm : Form
             AutoSize = true,
             Location = new Point(54, 44)
         };
+        var plan = MakeButton("Plan");
+        plan.Height = 34;
         var settings = MakeButton("Ustawienia");
         settings.Height = 34;
         settings.Location = new Point(1180, 20);
-        header.Controls.AddRange([mark, title, subtitle, settings]);
-        header.Resize += (_, _) => settings.Left = Math.Max(360, header.ClientSize.Width - settings.Width - 20);
+        header.Controls.AddRange([mark, title, subtitle, plan, settings]);
+        header.Resize += (_, _) =>
+        {
+            settings.Left = Math.Max(460, header.ClientSize.Width - settings.Width - 20);
+            settings.Top = 20;
+            plan.Left = settings.Left - plan.Width - 8;
+            plan.Top = 20;
+        };
+        plan.Click += (_, _) => ShowPlan();
         settings.Click += (_, _) => ShowSettings();
 
         var sidebar = new Panel { Dock = DockStyle.Left, Width = 336, BackColor = Theme.Sidebar, Padding = new Padding(14) };
@@ -113,7 +128,11 @@ internal sealed class MainForm : Form
         _level.Location = new Point(16, 122);
         _level.Width = 304;
         StyleField(_level);
-        var topicLabel = new Label { Text = "TEMATY", ForeColor = Theme.Muted, Font = Theme.TinyBold, Location = new Point(16, 158), AutoSize = true };
+        _topicLabel.Text = "TEMATY";
+        _topicLabel.ForeColor = Theme.Muted;
+        _topicLabel.Font = Theme.TinyBold;
+        _topicLabel.Location = new Point(16, 158);
+        _topicLabel.AutoSize = true;
         _topics.Location = new Point(14, 180);
         _topics.Size = new Size(308, 250);
         _topics.FlowDirection = FlowDirection.TopDown;
@@ -128,7 +147,7 @@ internal sealed class MainForm : Form
         _history.ForeColor = Theme.Chalk;
         _history.Font = Theme.Small;
         _history.IntegralHeight = false;
-        sidebar.Controls.AddRange([_math, _physics, _chemistry, _polish, _english, levelLabel, _level, topicLabel, _topics, historyLabel, _history]);
+        sidebar.Controls.AddRange([_math, _physics, _chemistry, _polish, _english, levelLabel, _level, _topicLabel, _topics, historyLabel, _history]);
         sidebar.Resize += (_, _) =>
         {
             _history.Height = Math.Max(80, sidebar.Height - _history.Top - 16);
@@ -175,6 +194,9 @@ internal sealed class MainForm : Form
         buttons.Controls.AddRange([_mic, paste, file, fresh, sample, save, next, _send]);
         _status.Dock = DockStyle.Bottom;
         _status.Height = 22;
+        _status.AutoSize = false;
+        _status.TextAlign = ContentAlignment.MiddleLeft;
+        _status.Padding = new Padding(8, 0, 8, 0);
         _status.ForeColor = Theme.Muted;
         _status.Font = Theme.Tiny;
         _status.Text = "Klucz zostaje na tym koncie Windows.";
@@ -258,7 +280,20 @@ internal sealed class MainForm : Form
             _voice.Dispose();
             _teacher.Dispose();
             ClearImages();
+            _appIcon?.Dispose();
+            _iconSource?.Dispose();
         };
+    }
+
+    private void UseAppIcon()
+    {
+        using var resource = typeof(MainForm).Assembly.GetManifestResourceStream("NaukaMatematyki_LO.PracowniaLO.ico");
+        if (resource == null) return;
+        _iconSource = new MemoryStream();
+        resource.CopyTo(_iconSource);
+        _iconSource.Position = 0;
+        _appIcon = new Icon(_iconSource);
+        Icon = _appIcon;
     }
 
     private void LoadState()
@@ -275,10 +310,18 @@ internal sealed class MainForm : Form
         }
         _historyItems.AddRange(SettingsStore.LoadHistory());
         BindHistory();
-        SetSubject(string.IsNullOrWhiteSpace(_settings.Subject) ? "Matematyka" : _settings.Subject);
+        _activePlan = SettingsStore.LoadPlan();
+        if (_activePlan != null && _level.Items.Contains(_activePlan.Level))
+            _level.SelectedItem = _activePlan.Level;
+        var subject = _activePlan is { Subject.Length: > 0 }
+            ? _activePlan.Subject
+            : string.IsNullOrWhiteSpace(_settings.Subject) ? "Matematyka" : _settings.Subject;
+        SetSubject(subject);
         _status.Text = string.IsNullOrWhiteSpace(_apiKey)
             ? "Otwórz Ustawienia i wklej klucz z console.x.ai."
-            : "Możesz pytać.";
+            : _activePlan == null
+                ? "Możesz pytać."
+                : PlanStatus(_activePlan);
     }
 
     private void LayoutSubjects(int sidebarWidth)
@@ -310,9 +353,134 @@ internal sealed class MainForm : Form
         button.ForeColor = selected ? Color.White : Theme.Chalk;
     }
 
+    private void ShowPlan()
+    {
+        using var dialog = new PlanDialog(_activePlan, _settings.Subject, _level.Text)
+        {
+            CanCompose = !string.IsNullOrWhiteSpace(_apiKey),
+            Compose = ComposePlanLesson
+        };
+        if (_appIcon != null) dialog.Icon = _appIcon;
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        ApplyPlan(dialog.Cleared ? null : dialog.Plan);
+    }
+
+    private void ApplyPlan(StudyPlan? plan)
+    {
+        _activePlan = plan is { Items.Count: > 0 } ? plan : null;
+        SettingsStore.SavePlan(_activePlan);
+        if (_activePlan == null)
+        {
+            SetSubject(string.IsNullOrWhiteSpace(_settings.Subject) ? "Matematyka" : _settings.Subject);
+            ShowBoard(scrollEnd: false);
+            _status.Text = "Plan wyłączony. Po lewej są znowu tematy programu.";
+            return;
+        }
+
+        if (_level.Items.Contains(_activePlan.Level)) _level.SelectedItem = _activePlan.Level;
+        SetSubject(string.IsNullOrWhiteSpace(_activePlan.Subject) ? _settings.Subject : _activePlan.Subject);
+        _session.Clear();
+        _history.ClearSelected();
+        ShowBoard(scrollEnd: false);
+        _status.Text = PlanStatus(_activePlan);
+    }
+
+    private static string PlanStatus(StudyPlan plan)
+    {
+        var who = string.IsNullOrWhiteSpace(plan.Author) ? "" : " od " + plan.Author;
+        var ready = plan.Items.Count(item => item.HasLesson);
+        var prepared = ready == 0 ? "" : ready == plan.Items.Count ? " Lekcje są już przygotowane." : $" Przygotowane lekcje: {ready}.";
+        return $"Plan „{plan.Title}”{who}. {plan.Items.Count} zagadnień.{prepared} Kliknij temat po lewej.";
+    }
+
+    private Task<string> ComposePlanLesson(string subject, string level, string question, CancellationToken cancellationToken)
+    {
+        var key = _apiKey.Trim();
+        if (key.Length == 0)
+            throw new InvalidOperationException("Najpierw wklej klucz API w Ustawieniach.");
+        return _teacher.AskAsync(key, _modelName, subject, level, [], question, [], cancellationToken);
+    }
+
+    private async Task SendPlanItem(StudyPlanItem item)
+    {
+        if (_activePlan == null) return;
+        var plan = _activePlan;
+        var index = Math.Max(1, plan.Items.IndexOf(item) + 1);
+        var question = PlanLessonText.Question(plan.Title, plan.Author, plan.Note, index, plan.Items.Count, item.Prompt);
+        var shown = PlanLessonText.Shown(plan.Title, plan.Subject, index, plan.Items.Count, item.Title, item.Prompt);
+        if (!string.IsNullOrWhiteSpace(plan.Subject)) SetSubject(plan.Subject);
+        if (!string.IsNullOrWhiteSpace(plan.Level) && _level.Items.Contains(plan.Level))
+            _level.SelectedItem = plan.Level;
+        if (item.HasLesson && TryPreparedLesson(item.Lesson, out var prepared))
+        {
+            ShowPrepared(shown, prepared, item.Lesson!);
+            return;
+        }
+        await SendAsync(question, shown);
+    }
+
+    private static bool TryPreparedLesson(string? raw, out LessonDocument lesson)
+    {
+        lesson = LessonDocument.Parse(raw ?? "");
+        return !string.IsNullOrWhiteSpace(raw)
+            && raw.Contains('{')
+            && lesson.Blocks.Count > 0
+            && lesson.Title != "Odpowiedź";
+    }
+
+    private void ShowPrepared(string shown, LessonDocument lesson, string raw)
+    {
+        var turn = new StudyTurn
+        {
+            Question = shown,
+            Subject = _settings.Subject,
+            Level = _level.Text,
+            At = DateTime.Now,
+            RawLesson = raw,
+            Prepared = true,
+            Lesson = lesson
+        };
+        var last = _historyItems.LastOrDefault();
+        if (last == null || last.RawLesson != raw || last.Question != shown)
+        {
+            _historyItems.Add(turn);
+            SettingsStore.SaveHistory(_historyItems);
+            BindHistory();
+        }
+        _history.ClearSelected();
+        _session.Clear();
+        _session.Add(turn);
+        ShowBoard(scrollEnd: true);
+        _status.Text = "To lekcja przejrzana przy tym zagadnieniu. Dopytaj albo kliknij Kontynuuj — dalej idziesz po swojemu.";
+    }
+
     private void RebuildTopics()
     {
         _topics.Controls.Clear();
+        if (_activePlan is { Items.Count: > 0 } plan)
+        {
+            var caption = string.IsNullOrWhiteSpace(plan.Subject) ? plan.Title : plan.Subject + "  ·  " + plan.Title;
+            _topicLabel.Text = caption.Length > 46 ? caption[..46] + "…" : caption;
+            foreach (var item in plan.Items)
+            {
+                var captured = item;
+                var about = item.Prompt.ReplaceLineEndings(" ").Trim();
+                if (about.Length > 64) about = about[..64] + "…";
+                var button = MakeButton(item.Title + "\n" + about);
+                button.AutoSize = false;
+                button.AutoEllipsis = true;
+                button.Width = Math.Max(220, _topics.Width - 8);
+                button.Height = 52;
+                button.Padding = new Padding(8, 4, 8, 2);
+                button.Margin = new Padding(0, 0, 0, 6);
+                button.TextAlign = ContentAlignment.TopLeft;
+                button.Click += async (_, _) => await SendPlanItem(captured);
+                _topics.Controls.Add(button);
+            }
+            return;
+        }
+
+        _topicLabel.Text = "TEMATY";
         foreach (var (label, prompt) in TopicsFor(_settings.Subject))
         {
             var button = MakeButton(label);
@@ -355,8 +523,33 @@ internal sealed class MainForm : Form
 
     private void ShowBoard(bool scrollEnd)
     {
-        _board.Show(_session, includeWelcome: _session.Count == 0);
+        var plan = _session.Count == 0 ? _activePlan : null;
+        _board.Show(_session, includeWelcome: _session.Count == 0 && plan is null, plan, _working);
         if (scrollEnd) _board.ScrollToEnd();
+    }
+
+    private void ShowWorking(string about)
+    {
+        var line = about.ReplaceLineEndings(" ").Trim();
+        if (line.Length > 140) line = line[..140] + "…";
+        _working = about.Trim();
+        _status.Height = 58;
+        _status.BackColor = Theme.Copper;
+        _status.ForeColor = Color.White;
+        _status.Font = Theme.SmallBold;
+        _status.Text = "Grok opracowuje lekcję: " + line + "\nTo zwykle trwa minutę albo dwie. Nie zamykaj programu. Stop przerywa.";
+        ShowBoard(scrollEnd: true);
+    }
+
+    private void HideWorking(bool refreshBoard)
+    {
+        var wasWorking = _working != null;
+        _working = null;
+        _status.Height = 22;
+        _status.BackColor = Theme.Sidebar;
+        _status.ForeColor = Theme.Muted;
+        _status.Font = Theme.Tiny;
+        if (wasWorking && refreshBoard) ShowBoard(scrollEnd: true);
     }
 
     private void ShowSample()
@@ -438,11 +631,12 @@ internal sealed class MainForm : Form
 
         _busy = true;
         _send.Text = "Stop";
-        _status.Text = "Grok układa lekcję…";
         _cts = new CancellationTokenSource();
+        ShowWorking(shownQuestion ?? question);
         try
         {
-            var raw = await _teacher.AskAsync(key, _modelName, _settings.Subject, _level.Text, history, question, images, _cts.Token);
+            var guided = _session.Any(turn => turn.Prepared);
+            var raw = await _teacher.AskAsync(key, _modelName, _settings.Subject, _level.Text, history, question, images, _cts.Token, guided);
             var lesson = LessonDocument.Parse(raw);
             var turn = new StudyTurn
             {
@@ -463,6 +657,7 @@ internal sealed class MainForm : Form
                 _input.Clear();
                 ClearImages(keepThumbs: true);
             }
+            HideWorking(refreshBoard: false);
             ShowBoard(scrollEnd: true);
             var ready = lesson.Blocks.Any(block => block.Type == "graph")
                 ? "Lekcja gotowa, z wykresem."
@@ -471,11 +666,13 @@ internal sealed class MainForm : Form
         }
         catch (OperationCanceledException)
         {
+            HideWorking(refreshBoard: true);
             _status.Text = "Przerwane.";
         }
         catch (Exception ex)
         {
             AppLog.Error("Lekcja", ex);
+            HideWorking(refreshBoard: true);
             _status.Text = ex.Message;
         }
         finally
@@ -707,7 +904,8 @@ internal sealed class MainForm : Form
             ShowInTaskbar = false,
             ClientSize = new Size(440, 230),
             BackColor = Theme.Sidebar,
-            Font = Theme.Body
+            Font = Theme.Body,
+            Icon = Icon
         };
         var hint = new Label
         {

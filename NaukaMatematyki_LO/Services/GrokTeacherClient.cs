@@ -16,11 +16,12 @@ internal sealed class GrokTeacherClient : IDisposable
         IReadOnlyList<(string Role, string Text)> history,
         string question,
         IReadOnlyList<byte[]> images,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool guided = false)
     {
         var messages = new JsonArray
         {
-            new JsonObject { ["role"] = "system", ["content"] = SystemPrompt(subject, level, history.Count > 0) }
+            new JsonObject { ["role"] = "system", ["content"] = SystemPrompt(subject, level, history.Count > 0, guided) }
         };
         foreach (var turn in history.TakeLast(8))
         {
@@ -144,11 +145,14 @@ internal sealed class GrokTeacherClient : IDisposable
         return node.ToString();
     }
 
-    private static string SystemPrompt(string subject, string level, bool inLesson)
+    private static string SystemPrompt(string subject, string level, bool inLesson, bool guided)
     {
         var pace = inLesson
             ? "Na tablicy jest już lekcja. Dopytanie o pokazany fragment zrób krótko. Prośba o kontynuację, dalszy krok albo trudniejsze zadanie jest pełną lekcją i podnosi poprzeczkę."
             : "To początek. Ułóż pełną lekcję i skończ zadaniem, które zaprasza do trudniejszego kroku.";
+        var guide = guided
+            ? "Lekcja na tablicy została przejrzana przy przygotowaniu zagadnienia. Trzymaj się jej pojęć, przykładu i kolejności, dopóki uczeń idzie tym tropem. Gdy pyta o coś obok, utknie inaczej albo chce iść dalej, idź za uczniem."
+            : "";
         return $$$"""
             Jesteś cierpliwym nauczycielem {{{subject}}} w liceum ogólnokształcącym. {{{LevelLine(level)}}}
             Uczeń pisze, mówi albo wkleja zdjęcie. Najpierw odczytaj treść, potem ucz. Po polsku, krótko, konkretnie, bez protekcjonalności.
@@ -172,6 +176,7 @@ internal sealed class GrokTeacherClient : IDisposable
             Krótka odpowiedź dotyczy tylko dopytania o fragment, który już jest na tablicy: title, headline i blocks. Pomiń solution, checkQuestion, checkAnswer i nextTask.
             Kontynuacja: nie powtarzaj poprzedniej lekcji. Dodaj jedną nową definicję, jedno wyzwanie trudniejsze niż poprzedni krok i w nextTask jedno zadanie jeszcze bardziej złożone. Trudność rośnie przez nowy warunek, nowy symbol albo połączenie dwóch pojęć.
             {{{pace}}}
+            {{{guide}}}
             {{{SubjectGuide(subject)}}}
             Pytanie spoza tego przedmiotu zamknij w jednym zdaniu i zaproponuj powrót do lekcji.
             """;
