@@ -5,6 +5,7 @@ namespace NaukaMatematyki_LO;
 internal sealed class MainForm : Form
 {
     private readonly GrokTeacherClient _teacher = new();
+    private readonly EnglishSpeech _speech = new();
     private readonly VoiceInput _voice = new();
     private readonly LessonBoard _board = new();
     private readonly TextBox _input = new();
@@ -51,6 +52,7 @@ internal sealed class MainForm : Form
         DoubleBuffered = true;
         AllowDrop = true;
         BuildUi();
+        _board.Speak = ToggleSpeechAsync;
         LoadState();
         Wire();
         ShowBoard(scrollEnd: false);
@@ -278,11 +280,47 @@ internal sealed class MainForm : Form
         FormClosed += (_, _) =>
         {
             _voice.Dispose();
+            _speech.Dispose();
             _teacher.Dispose();
             ClearImages();
             _appIcon?.Dispose();
             _iconSource?.Dispose();
         };
+    }
+
+    private async Task<bool> ToggleSpeechAsync(string text)
+    {
+        var key = _apiKey.Trim();
+        if (key.Length == 0)
+        {
+            _status.Text = "Najpierw wklej klucz API w Ustawieniach.";
+            ShowSettings();
+            return false;
+        }
+
+        if (_speech.IsPlaying && _speech.Current == text)
+        {
+            _speech.Stop();
+            _status.Text = "Wymowa zatrzymana.";
+            return false;
+        }
+
+        _speech.Stop();
+        _status.Text = "Przygotowuję wymowę…";
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var audio = await _teacher.SpeakAsync(key, text, cts.Token);
+            await _speech.PlayAsync(audio, text);
+            _status.Text = "Słuchaj wymowy. Kolejne Posłuchaj przy tym samym zdaniu zatrzymuje.";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Wymowa", ex);
+            _status.Text = ex.Message;
+            return false;
+        }
     }
 
     private void UseAppIcon()
@@ -1118,7 +1156,7 @@ internal sealed class MainForm : Form
         ("Czytanie", "Pokaż strategię czytania tekstu maturalnego: skanowanie, słowa kluczowe, pułapki w odpowiedziach i uzasadnienie wyboru."),
         ("Wypowiedź pisemna", "Ułóż plan e-maila formalnego po angielsku: cel, trzy akapity, zwroty grzecznościowe i typowe błędy."),
         ("Mediacja", "Przetłumacz sens polskiej prośby na naturalny angielski: „Czy mógłby Pan przesunąć termin sprawdzianu?” Wyjaśnij rejestr."),
-        ("Wymowa", "Pokaż różnicę między ship i sheep, live i leave oraz thought i taught. Zapisz wymowę prostym zapisem."),
+        ("Wymowa", "Pokaż różnicę między ship i sheep, live i leave oraz thought i taught. Dla każdej pary dodaj blok pronounce: say po angielsku i krótki opis po polsku."),
         ("Gramatyka", "Wytłumacz przedimki a, an i the na przykładach z życia licealisty. Dodaj zadanie z lukami.")
     ];
 

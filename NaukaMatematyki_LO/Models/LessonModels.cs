@@ -77,6 +77,7 @@ internal sealed class LessonDocument
                     : $"{block.Display ?? block.Latex} [{block.Units}]",
                 "steps" => block.Items is null ? null : string.Join(" ", block.Items),
                 "graph" => block.Graph?.Title ?? block.Caption,
+                "pronounce" or "wymowa" or "speech" => JoinSpeech(block.Say, block.Content),
                 _ => block.Content
             };
             if (!string.IsNullOrWhiteSpace(bit)) parts.Add(bit.Trim());
@@ -86,6 +87,12 @@ internal sealed class LessonDocument
         if (!string.IsNullOrWhiteSpace(NextTask)) parts.Add("Następne zadanie: " + NextTask);
         var text = string.Join("\n", parts);
         return text.Length <= 3500 ? text : text[..3500];
+    }
+
+    private static string? JoinSpeech(string? say, string? hint)
+    {
+        var line = string.Join(" — ", new[] { say, hint }.Where(part => !string.IsNullOrWhiteSpace(part)));
+        return string.IsNullOrWhiteSpace(line) ? null : line;
     }
 
     private static string? ExtractJson(string? raw)
@@ -131,6 +138,7 @@ internal sealed class LessonBlock
     public string? Display { get; set; }
     public string? Units { get; set; }
     public string? Caption { get; set; }
+    public string? Say { get; set; }
     public List<string>? Items { get; set; }
     public GraphSpec? Graph { get; set; }
 
@@ -144,7 +152,8 @@ internal sealed class LessonBlock
             Latex = LessonDocument.ReadString(element, "latex"),
             Display = LessonDocument.ReadString(element, "display", "plain"),
             Units = LessonDocument.ReadString(element, "units", "unit", "jednostka"),
-            Caption = LessonDocument.ReadString(element, "caption")
+            Caption = LessonDocument.ReadString(element, "caption"),
+            Say = LessonDocument.ReadString(element, "say", "speech")
         };
 
         if (element.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)

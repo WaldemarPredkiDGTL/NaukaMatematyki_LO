@@ -9,6 +9,9 @@ internal sealed class LessonBoard : Panel
     private int _contentHeight;
     private bool _layingOut;
 
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Func<string, Task<bool>>? Speak { get; set; }
+
     public LessonBoard()
     {
         AutoScroll = true;
@@ -93,6 +96,7 @@ internal sealed class LessonBoard : Panel
                 "steps" => new StepsCard(block),
                 "callout" => new CalloutCard(block.Content ?? ""),
                 "graph" => new GraphCard(block),
+                "pronounce" or "wymowa" or "speech" => PronounceCard.Create(block, Speak),
                 _ => string.IsNullOrWhiteSpace(block.Content) ? null : new TextCard(block.Content)
             };
             if (card is not null) Add(card);
@@ -389,6 +393,91 @@ internal sealed class TitleCard(string title, string headline) : LessonCard
         {
             TextRenderer.DrawText(graphics, headline, Theme.Body, new Rectangle(18, y, Width - 36, Height - y - 8),
                 Theme.Muted, TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
+        }
+    }
+}
+
+internal sealed class PronounceCard : LessonCard
+{
+    private readonly string _say;
+    private readonly string _hint;
+    private readonly Button _listen;
+    private readonly Func<string, Task<bool>>? _speak;
+    private bool _busy;
+
+    private PronounceCard(string say, string hint, Func<string, Task<bool>>? speak)
+    {
+        _say = say;
+        _hint = hint;
+        _speak = speak;
+        _listen = new Button
+        {
+            Text = "Posłuchaj",
+            AccessibleName = "Posłuchaj",
+            Visible = say.Length > 0 && speak is not null
+        };
+        _listen.FlatStyle = FlatStyle.Flat;
+        _listen.BackColor = Theme.Copper;
+        _listen.ForeColor = Color.White;
+        _listen.Font = Theme.SmallBold;
+        _listen.Cursor = Cursors.Hand;
+        _listen.FlatAppearance.BorderColor = Theme.CopperDeep;
+        _listen.Click += async (_, _) => await ListenAsync();
+        Controls.Add(_listen);
+    }
+
+    public static PronounceCard? Create(LessonBlock block, Func<string, Task<bool>>? speak)
+    {
+        var say = (block.Say ?? "").Trim();
+        var hint = (block.Content ?? "").Trim();
+        if (say.Length == 0 && hint.Length == 0) return null;
+        return new PronounceCard(say, hint, speak);
+    }
+
+    public override void Reflow(int width)
+    {
+        var inner = Math.Max(80, width - 40);
+        var sayHeight = TextHeight(_say, Theme.BodyBold, inner);
+        var hintHeight = TextHeight(_hint, Theme.Body, inner);
+        var button = _listen.Visible ? 44 : 0;
+        Height = 34 + sayHeight + hintHeight + button + 16;
+        _listen.SetBounds(18, Height - 46, 132, 32);
+    }
+
+    protected override void PaintCard(Graphics graphics)
+    {
+        FillRound(graphics, new Rectangle(0, 0, Width - 1, Height - 1), 14, Theme.Paper);
+        TextRenderer.DrawText(graphics, "WYMOWA", Theme.TinyBold, new Rectangle(18, 12, Width - 36, 16), Theme.Copper, TextFormatFlags.Left);
+        var y = 32;
+        var inner = Math.Max(80, Width - 40);
+        if (_say.Length > 0)
+        {
+            var sayHeight = TextHeight(_say, Theme.BodyBold, inner);
+            TextRenderer.DrawText(graphics, _say, Theme.BodyBold, new Rectangle(18, y, inner, sayHeight),
+                Theme.InkText, TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
+            y += sayHeight + 4;
+        }
+        if (_hint.Length > 0)
+        {
+            var hintHeight = TextHeight(_hint, Theme.Body, inner);
+            TextRenderer.DrawText(graphics, _hint, Theme.Body, new Rectangle(18, y, inner, hintHeight),
+                Theme.InkText, TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
+        }
+    }
+
+    private async Task ListenAsync()
+    {
+        if (_speak is null || _busy || _say.Length == 0) return;
+        _busy = true;
+        _listen.Enabled = false;
+        try
+        {
+            await _speak(_say);
+        }
+        finally
+        {
+            _busy = false;
+            if (!IsDisposed) _listen.Enabled = true;
         }
     }
 }

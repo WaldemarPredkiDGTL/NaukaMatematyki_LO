@@ -115,6 +115,32 @@ internal sealed class GrokTeacherClient : IDisposable
         return ReadContent(root["choices"]?[0]?["message"]?["content"]).Trim().Trim('"', '„', '”');
     }
 
+    public async Task<byte[]> SpeakAsync(string apiKey, string text, CancellationToken cancellationToken)
+    {
+        var spoken = text.Trim();
+        if (spoken.Length > 400) spoken = spoken[..400];
+        var payload = new JsonObject
+        {
+            ["text"] = spoken,
+            ["voice_id"] = "eve",
+            ["language"] = "en",
+            ["speed"] = 0.85
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.x.ai/v1/tts");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
+        request.Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
+        using var response = await _http.SendAsync(request, cancellationToken);
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = Encoding.UTF8.GetString(bytes);
+            throw new InvalidOperationException(ReadError(body) ?? $"Wymowa nie weszła ({(int)response.StatusCode}).");
+        }
+        if (bytes.Length < 80)
+            throw new InvalidOperationException("Wymowa wróciła pusta.");
+        return bytes;
+    }
+
     private static string? ReadError(string body)
     {
         try
@@ -194,7 +220,7 @@ internal sealed class GrokTeacherClient : IDisposable
         "Fizyka" => "Podawaj jednostki i rozróżniaj wielkość od wartości.\n" + UnitsGuide + "\n" + GraphGuide,
         "Chemia" => "Chemia szkolna: bilans równań, mole, stężenia i pH. We wzorach chemicznych używaj indeksów dolnych.\n" + UnitsGuide + "\nWykres dodawaj tylko przy zależności liczbowej.\n" + GraphGuide,
         "Język polski" => "Opieraj się na podstawie programowej LO: odbiór i tworzenie wypowiedzi, retoryka, kultura języka, literatura. Rozróżniaj tezę, argument, przykład z tekstu, wniosek i środki stylistyczne. Nie zmyślaj cytatów. Nie dodawaj wykresu.",
-        "Język angielski" => "Opieraj się na podstawie programowej LO: rozumienie tekstu, mediacja, gramatyka, słownictwo, wymowa i wypowiedź pisemna. Przykład podawaj po angielsku, wyjaśnienie krótko po polsku. Zaznacz rejestr: neutralny, formalny albo nieformalny. Nie dodawaj wykresu.",
+        "Język angielski" => "Opieraj się na podstawie programowej LO: rozumienie tekstu, mediacja, gramatyka, słownictwo, wymowa i wypowiedź pisemna. Przykład podawaj po angielsku, wyjaśnienie krótko po polsku. Zaznacz rejestr: neutralny, formalny albo nieformalny. Nie dodawaj wykresu.\nGdy uczeń ma usłyszeć słowo, parę albo krótkie zdanie, dodaj blok {\"type\":\"pronounce\",\"say\":\"ship\",\"content\":\"ship — szyp, krótkie i.\"}. say jest tylko po angielsku, bez opisu. content mówi po polsku, co słychać. Najwyżej dwa takie bloki, a przy pytaniu o wymowę do czterech.",
         _ => "Ucz szkolnej matematyki: po co to jest, przykład liczbowy, potem ćwiczenie. Wzór podawaj w latex i w display, ułamkami, pierwiastkami i potęgami. Przy czystej matematyce units zostaw puste.\n" + GraphGuide
     };
 
