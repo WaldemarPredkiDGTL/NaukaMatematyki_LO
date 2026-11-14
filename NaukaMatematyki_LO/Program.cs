@@ -1,3 +1,5 @@
+using Velopack;
+
 namespace NaukaMatematyki_LO
 {
     internal static class Program
@@ -8,8 +10,8 @@ namespace NaukaMatematyki_LO
         [STAThread]
         static void Main()
         {
-            // To customize application configuration such as set high DPI settings or default font,
-            // see https://aka.ms/applicationconfiguration.
+            // Musi być pierwsze: Velopack kończy tu instalację aktualizacji i dopiero potem odpala program.
+            VelopackApp.Build().Run();
             ApplicationConfiguration.Initialize();
             Application.SetColorMode(SystemColorMode.Dark);
             Application.Run(new MainForm());

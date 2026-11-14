@@ -1,0 +1,67 @@
+name: Wydanie
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Numer wersji, na przykład 1.0.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Pobierz kod
+        uses: actions/checkout@v4
+
+      - name: Ustal wersję
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME}"
+          fi
+          version="${version#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Zainstaluj .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Zbuduj program
+        run: >
+          dotnet publish NaukaMatematyki_LO/NaukaMatematyki_LO.csproj
+          -c Release
+          -o publish
+          -r win-x64
+          --self-contained true
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:DebugType=none
+          -p:DebugSymbols=false
+
+      - name: Spakuj i opublikuj wydanie
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          dotnet tool install -g vpk --version 1.2.161
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:Path = "$env:USERPROFILE\.dotnet\tools;" + $env:Path
+
+          # Pierwsze wydanie nie ma poprzedniej paczki, więc brak delty jest w porządku.
+          vpk download github --repoUrl "https://github.com/${{ github.repository }}" --token "${{ secrets.GITHUB_TOKEN }}"
+
+          vpk pack -u DGTL.PracowniaLO -v "${{ steps.version.outputs.version }}" -p publish --mainExe NaukaMatematyki_LO.exe --packTitle "Pracownia LO"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          vpk upload github --repoUrl "https://github.com/${{ github.repository }}" --token "${{ secrets.GITHUB_TOKEN }}" --publish --releaseName "Pracownia LO ${{ steps.version.outputs.version }}" --tag "v${{ steps.version.outputs.version }}"
+          exit $LASTEXITCODE

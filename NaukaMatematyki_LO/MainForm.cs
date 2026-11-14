@@ -33,7 +33,10 @@ internal sealed class MainForm : Form
     public MainForm()
     {
         _voice.ApiKey = () => _apiKey;
-        Text = "Pracownia LO — przedmioty ścisłe i języki";
+        var appVersion = typeof(MainForm).Assembly.GetName().Version;
+        Text = appVersion == null
+            ? "Pracownia LO — przedmioty ścisłe i języki"
+            : $"Pracownia LO — {appVersion.ToString(3)}";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1100, 720);
         Size = new Size(1360, 860);
@@ -45,9 +48,10 @@ internal sealed class MainForm : Form
         LoadState();
         Wire();
         ShowBoard(scrollEnd: false);
-        Shown += (_, _) =>
+        Shown += async (_, _) =>
         {
             if (string.IsNullOrWhiteSpace(_apiKey)) ShowSettings();
+            await OfferUpdateAsync();
         };
     }
 
@@ -206,6 +210,42 @@ internal sealed class MainForm : Form
             if (e.Data?.GetData(DataFormats.FileDrop) is string[] files)
                 foreach (var path in files) TryAddFile(path);
         };
+    }
+
+    private async Task OfferUpdateAsync()
+    {
+        try
+        {
+            var updater = new AppUpdater();
+            if (!updater.CanUpdate) return;
+
+            var version = await updater.CheckVersionAsync();
+            if (string.IsNullOrWhiteSpace(version)) return;
+
+            var answer = MessageBox.Show(
+                this,
+                $"Na GitHubie jest wersja {version}.\nPobrać ją i uruchomić program ponownie?",
+                "Aktualizacja",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Information);
+            if (answer != DialogResult.Yes)
+            {
+                _status.Text = $"Wersja {version} czeka na GitHubie.";
+                return;
+            }
+
+            _status.Text = "Pobieram aktualizację…";
+            await updater.DownloadAsync(percent =>
+            {
+                if (IsDisposed) return;
+                BeginInvoke(() => _status.Text = $"Pobieram aktualizację… {percent}%");
+            });
+            updater.ApplyAndRestart();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Aktualizacja", ex);
+        }
     }
 
     private void Wire()
